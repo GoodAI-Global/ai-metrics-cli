@@ -16,6 +16,7 @@ from typing import Optional
 
 import click
 
+from . import __version__
 from .analyzer import MetricsAnalyzer, AnalysisError, compare_metrics
 from .benchmarks import load_benchmarks, get_benchmark_for_industry, BenchmarkError
 from .recommendations import (
@@ -36,8 +37,8 @@ from .formatters import (
 SAMPLE_DATA_MAP = {
     "manufacturing": "manufacturing_metrics.csv",
     "insurance": "insurance_metrics.csv",
-    "aquaculture": "manufacturing_metrics.csv",  # Use manufacturing as fallback
-    "general": "manufacturing_metrics.csv"  # Use manufacturing as fallback
+    "aquaculture": "aquaculture_metrics.csv",
+    "general": "general_metrics.csv",
 }
 
 
@@ -64,7 +65,7 @@ def get_sample_data_path(industry: str) -> Path:
 
 
 @click.group()
-@click.version_option(version="1.0.0", prog_name="goodai-metrics")
+@click.version_option(version=__version__, prog_name="goodai-metrics")
 def main():
     """
     Good AI Metrics CLI - Enterprise AI Implementation Analytics.
@@ -113,7 +114,7 @@ def analyze(file: Optional[str], sample: Optional[str], industry: Optional[str],
         if industry is None:
             industry = sample
     elif file:
-        filepath = Path(file)
+        filepath = Path(file).resolve()
         if not filepath.exists():
             raise click.ClickException(f"File not found: {filepath}")
     else:
@@ -218,11 +219,9 @@ def health(file: str, industry: str, max_high_priority: int, max_gap: float):
             sys.exit(1)
 
     except BenchmarkError as e:
-        click.echo(f"Benchmark error: {e}", err=True)
-        sys.exit(1)
+        raise click.ClickException(f"Benchmark error: {e}")
     except AnalysisError as e:
-        click.echo(f"Analysis error: {e}", err=True)
-        sys.exit(1)
+        raise click.ClickException(f"Analysis error: {e}")
 
 
 @main.command()

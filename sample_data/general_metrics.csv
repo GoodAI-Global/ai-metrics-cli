@@ -1,0 +1,4 @@
+metric,value,timestamp
+accuracy,0.85,2025-01-01
+latency_ms,600,2025-01-01
+error_rate,0.12,2025-01-01

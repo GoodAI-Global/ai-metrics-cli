@@ -1,0 +1,4 @@
+metric,value,timestamp
+prediction_accuracy,0.78,2025-01-01
+early_warning_hours,18,2025-01-01
+feed_efficiency_improvement,0.08,2025-01-01

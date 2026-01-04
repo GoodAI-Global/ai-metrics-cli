@@ -13,19 +13,67 @@ Core Principles:
 __version__ = "1.0.0"
 __author__ = "rogermsc"
 
-from .benchmarks import load_benchmarks, get_benchmark_for_industry
-from .analyzer import analyze_metrics, MetricsAnalyzer
-from .recommendations import generate_recommendation, generate_all_recommendations
-from .formatters import format_report_json, format_report_text
+from .benchmarks import (
+    load_benchmarks,
+    get_benchmark_for_industry,
+    get_available_industries,
+    get_percentile_rank,
+    BenchmarkError,
+)
+from .analyzer import (
+    analyze_metrics,
+    compare_metrics,
+    MetricsAnalyzer,
+    MetricValue,
+    AnalysisError,
+)
+from .recommendations import (
+    generate_recommendation,
+    generate_all_recommendations,
+    determine_overall_health,
+    check_health_thresholds,
+    calculate_gap,
+    is_higher_better,
+    determine_priority,
+    determine_effort,
+)
+from .formatters import (
+    format_report_json,
+    format_report_text,
+    format_health_check,
+    format_comparison_json,
+    format_comparison_text,
+)
 
 __all__ = [
+    # Package metadata
     "__version__",
+    "__author__",
+    # Benchmarks
     "load_benchmarks",
     "get_benchmark_for_industry",
+    "get_available_industries",
+    "get_percentile_rank",
+    "BenchmarkError",
+    # Analyzer
     "analyze_metrics",
+    "compare_metrics",
     "MetricsAnalyzer",
+    "MetricValue",
+    "AnalysisError",
+    # Recommendations
     "generate_recommendation",
     "generate_all_recommendations",
+    "determine_overall_health",
+    "check_health_thresholds",
+    "calculate_gap",
+    "is_higher_better",
+    "determine_priority",
+    "determine_effort",
+    # Formatters
     "format_report_json",
     "format_report_text",
+    "format_health_check",
+    "format_comparison_json",
+    "format_comparison_text",
 ]

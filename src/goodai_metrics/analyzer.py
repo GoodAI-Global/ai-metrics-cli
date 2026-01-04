@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
-from .benchmarks import load_benchmarks, get_benchmark_for_industry, BenchmarkError
+from .benchmarks import load_benchmarks, get_benchmark_for_industry, get_percentile_rank, BenchmarkError
+
+# Import consolidated utility functions (single source of truth)
+# Note: Imported here to avoid duplication; recommendations.py is the authoritative source
+from .recommendations import is_higher_better, calculate_gap
 
 
 class AnalysisError(Exception):
@@ -167,18 +171,14 @@ class MetricsAnalyzer:
             Analysis dictionary for this metric.
         """
         # Determine if higher is better based on metric name
-        higher_is_better = self._is_higher_better(metric.name)
+        higher_better = is_higher_better(metric.name)
 
-        # Calculate gap from p50 (median)
-        p50 = benchmark["p50"]
-        if higher_is_better:
-            gap = (p50 - metric.value) / p50 if p50 != 0 else 0
-        else:
-            gap = (metric.value - p50) / p50 if p50 != 0 else 0
+        # Calculate gap from p50 (median) using consolidated function
+        gap = calculate_gap(metric.value, benchmark["p50"], higher_better)
 
-        # Determine percentile bracket
-        percentile_bracket = self._get_percentile_bracket(
-            metric.value, benchmark, higher_is_better
+        # Determine percentile bracket using consolidated function
+        percentile_bracket = get_percentile_rank(
+            metric.value, benchmark, higher_better
         )
 
         return {
@@ -192,47 +192,9 @@ class MetricsAnalyzer:
             "gap_from_p50": gap,
             "gap_percent": abs(gap) * 100,
             "percentile_bracket": percentile_bracket,
-            "higher_is_better": higher_is_better,
+            "higher_is_better": higher_better,
             "needs_improvement": gap > 0
         }
-
-    def _is_higher_better(self, metric_name: str) -> bool:
-        """Determine if higher values are better for this metric."""
-        # Metrics where lower is better
-        lower_is_better = {
-            "latency_ms",
-            "error_rate",
-            "cost_per_inference",
-            "processing_time_hours"
-        }
-        return metric_name not in lower_is_better
-
-    def _get_percentile_bracket(
-        self, value: float, benchmark: Dict, higher_is_better: bool
-    ) -> str:
-        """Determine which percentile bracket a value falls into."""
-        if higher_is_better:
-            if value >= benchmark["p90"]:
-                return "above_p90"
-            elif value >= benchmark["p75"]:
-                return "p75_to_p90"
-            elif value >= benchmark["p50"]:
-                return "p50_to_p75"
-            elif value >= benchmark["p25"]:
-                return "p25_to_p50"
-            else:
-                return "below_p25"
-        else:
-            if value <= benchmark["p90"]:
-                return "above_p90"
-            elif value <= benchmark["p75"]:
-                return "p75_to_p90"
-            elif value <= benchmark["p50"]:
-                return "p50_to_p75"
-            elif value <= benchmark["p25"]:
-                return "p25_to_p50"
-            else:
-                return "below_p25"
 
 
 def analyze_metrics(
@@ -293,10 +255,10 @@ def compare_metrics(
         else:
             change_percent = 100.0 if after_val != 0 else 0.0
 
-        higher_is_better = analyzer._is_higher_better(metric_name)
+        higher_better = is_higher_better(metric_name)
 
         # Determine if this is an improvement
-        if higher_is_better:
+        if higher_better:
             improved = after_val > before_val
         else:
             improved = after_val < before_val
