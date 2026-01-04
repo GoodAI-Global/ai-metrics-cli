@@ -1,0 +1,5 @@
+metric,value,timestamp
+accuracy,0.91,2025-01-01
+processing_time_hours,36,2025-01-01
+straight_through_rate,0.28,2025-01-01
+error_rate,0.09,2025-01-01

@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "goodai-metrics"
+version = "1.0.0"
+description = "CLI tool for analyzing AI implementation metrics - Good AI Consultancy"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "rogermsc", email = "rogermsc@gmail.com"}
+]
+keywords = ["ai", "metrics", "analytics", "machine-learning", "enterprise"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "click>=8.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.scripts]
+goodai-metrics = "goodai_metrics.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/goodai/goodai-metrics"
+Documentation = "https://github.com/goodai/goodai-metrics#readme"
+Repository = "https://github.com/goodai/goodai-metrics"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+goodai_metrics = ["../benchmarks/*.json", "../sample_data/*.csv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v"
