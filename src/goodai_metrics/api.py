@@ -17,17 +17,16 @@ Usage:
     goodai-metrics serve --reload  # Development mode
 """
 
-import io
-import csv
-import hashlib
+import re
 import secrets
 import time
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Annotated
+from typing import Optional, List, Dict, Any
 
-from fastapi import FastAPI, HTTPException, Depends, Query, Header, Request, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Path as FastAPIPath, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, ConfigDict
@@ -59,6 +58,10 @@ MAX_INDUSTRY_LENGTH = 50
 # Rate limiting defaults
 DEFAULT_RATE_LIMIT = 100  # requests per minute
 RATE_LIMIT_WINDOW = 60  # seconds
+MAX_RATE_LIMIT_CLIENTS = 10000  # Maximum tracked clients (LRU eviction)
+
+# Request body size limit (1MB)
+MAX_REQUEST_BODY_SIZE = 1024 * 1024
 
 # Valid metric value range
 MIN_METRIC_VALUE = -1e12
@@ -92,7 +95,6 @@ class MetricInput(BaseModel):
     def validate_metric_name(cls, v: str) -> str:
         """Validate metric name format."""
         # Only allow alphanumeric, underscore, hyphen
-        import re
         if not re.match(r"^[a-zA-Z][a-zA-Z0-9_-]*$", v):
             raise ValueError(
                 "Metric name must start with letter and contain only "
@@ -140,7 +142,6 @@ class AnalyzeRequest(BaseModel):
     @classmethod
     def validate_industry(cls, v: str) -> str:
         """Validate industry name format."""
-        import re
         if not re.match(r"^[a-zA-Z][a-zA-Z0-9_-]*$", v):
             raise ValueError("Invalid industry name format")
         return v.lower()
@@ -151,7 +152,6 @@ class AnalyzeRequest(BaseModel):
         """Validate project name format."""
         if v is None:
             return v
-        import re
         if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$", v):
             raise ValueError("Invalid project name format")
         return v
@@ -186,6 +186,14 @@ class HealthCheckRequest(BaseModel):
         description="Maximum allowed gap percentage"
     )
 
+    @field_validator("industry")
+    @classmethod
+    def validate_industry(cls, v: str) -> str:
+        """Validate industry name format."""
+        if not re.match(r"^[a-zA-Z][a-zA-Z0-9_-]*$", v):
+            raise ValueError("Invalid industry name format")
+        return v.lower()
+
 
 class CompareRequest(BaseModel):
     """Request body for compare endpoint."""
@@ -209,6 +217,14 @@ class CompareRequest(BaseModel):
         max_length=MAX_INDUSTRY_LENGTH,
         description="Industry context"
     )
+
+    @field_validator("industry")
+    @classmethod
+    def validate_industry(cls, v: str) -> str:
+        """Validate industry name format."""
+        if not re.match(r"^[a-zA-Z][a-zA-Z0-9_-]*$", v):
+            raise ValueError("Invalid industry name format")
+        return v.lower()
 
 
 class MetricAnalysis(BaseModel):
@@ -308,24 +324,45 @@ class ErrorResponse(BaseModel):
 # ============================================================================
 
 class RateLimiter:
-    """Simple in-memory rate limiter."""
+    """
+    Simple in-memory rate limiter with LRU eviction.
 
-    def __init__(self, max_requests: int = DEFAULT_RATE_LIMIT, window: int = RATE_LIMIT_WINDOW):
+    Uses an OrderedDict to track clients with LRU eviction
+    to prevent unbounded memory growth from many unique IPs.
+
+    Note: In multi-worker deployments, each worker has its own
+    rate limiter. For distributed rate limiting, use Redis.
+    """
+
+    def __init__(
+        self,
+        max_requests: int = DEFAULT_RATE_LIMIT,
+        window: int = RATE_LIMIT_WINDOW,
+        max_clients: int = MAX_RATE_LIMIT_CLIENTS,
+    ):
         self.max_requests = max_requests
         self.window = window
-        self.requests: Dict[str, List[float]] = {}
+        self.max_clients = max_clients
+        # OrderedDict for LRU eviction (oldest entries first)
+        self.requests: OrderedDict[str, List[float]] = OrderedDict()
 
     def is_allowed(self, client_id: str) -> bool:
         """Check if request is allowed for client."""
         now = time.time()
 
-        # Clean old entries
+        # Clean old entries and update position for LRU
         if client_id in self.requests:
+            # Move to end (most recently used)
+            self.requests.move_to_end(client_id)
             self.requests[client_id] = [
                 ts for ts in self.requests[client_id]
                 if now - ts < self.window
             ]
         else:
+            # New client - evict oldest if at capacity
+            if len(self.requests) >= self.max_clients:
+                # Evict oldest (first) entry
+                self.requests.popitem(last=False)
             self.requests[client_id] = []
 
         # Check limit
@@ -343,6 +380,17 @@ class RateLimiter:
         now = time.time()
         active = [ts for ts in self.requests[client_id] if now - ts < self.window]
         return max(0, self.max_requests - len(active))
+
+    def cleanup_expired(self) -> int:
+        """Remove clients with no recent requests. Returns count removed."""
+        now = time.time()
+        expired = []
+        for client_id, timestamps in self.requests.items():
+            if all(now - ts >= self.window for ts in timestamps):
+                expired.append(client_id)
+        for client_id in expired:
+            del self.requests[client_id]
+        return len(expired)
 
 
 # ============================================================================
@@ -445,11 +493,15 @@ def create_app(
     )
 
     # CORS middleware
+    # Note: When using wildcard origins, credentials must be disabled
+    # For production with authentication, specify explicit origins
     if enable_cors:
+        origins = cors_origins or ["*"]
+        use_credentials = origins != ["*"]  # Only allow credentials with explicit origins
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=cors_origins or ["*"],
-            allow_credentials=True,
+            allow_origins=origins,
+            allow_credentials=use_credentials,
             allow_methods=["GET", "POST", "DELETE"],
             allow_headers=["*"],
         )
@@ -457,10 +509,28 @@ def create_app(
     # Request tracking middleware
     @app.middleware("http")
     async def add_request_tracking(request: Request, call_next):
-        """Add request ID and timing to all requests."""
+        """Add request ID, timing, and security checks to all requests."""
         # Generate request ID
         request_id = secrets.token_hex(8)
         set_context_id(request_id)
+
+        # Check Content-Length for POST/PUT/PATCH to prevent large payloads
+        if request.method in ("POST", "PUT", "PATCH"):
+            content_length = request.headers.get("content-length")
+            if content_length:
+                try:
+                    if int(content_length) > MAX_REQUEST_BODY_SIZE:
+                        clear_context_id()
+                        return JSONResponse(
+                            status_code=413,
+                            content={
+                                "error": "Request body too large",
+                                "detail": f"Maximum size is {MAX_REQUEST_BODY_SIZE} bytes",
+                                "request_id": request_id,
+                            },
+                        )
+                except ValueError:
+                    pass  # Invalid content-length handled by framework
 
         # Rate limiting
         if rate_limit:
@@ -491,10 +561,15 @@ def create_app(
     # Exception handlers
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
+        # Sanitize error details to prevent information disclosure
+        safe_detail = str(exc.detail) if exc.detail else "Request failed"
+        # Remove potential internal paths or sensitive info
+        if "/" in safe_detail or "\\" in safe_detail:
+            safe_detail = "Request failed"
         return JSONResponse(
             status_code=exc.status_code,
             content={
-                "error": exc.detail,
+                "error": safe_detail,
                 "request_id": request.headers.get("X-Request-ID"),
             },
         )
@@ -502,7 +577,9 @@ def create_app(
     @app.exception_handler(Exception)
     async def general_exception_handler(request: Request, exc: Exception):
         logger = get_logger(__name__)
+        # Log full exception for debugging (server-side only)
         logger.error(f"Unhandled exception: {exc}", exc_info=True)
+        # Return generic message to client (no internal details)
         return JSONResponse(
             status_code=500,
             content={
@@ -520,8 +597,6 @@ def create_app(
 # ============================================================================
 # API Routes
 # ============================================================================
-
-from fastapi import APIRouter
 
 api_router = APIRouter()
 
@@ -565,7 +640,14 @@ async def list_industries():
 
 
 @api_router.get("/industries/{industry}", tags=["Benchmarks"])
-async def get_industry_benchmarks(industry: str):
+async def get_industry_benchmarks(
+    industry: str = FastAPIPath(
+        ...,
+        max_length=MAX_INDUSTRY_LENGTH,
+        pattern=r"^[a-zA-Z][a-zA-Z0-9_-]*$",
+        description="Industry name"
+    )
+):
     """
     Get benchmark data for a specific industry.
 
@@ -576,9 +658,9 @@ async def get_industry_benchmarks(industry: str):
         app_state.reload_benchmarks()
 
     try:
-        benchmarks = get_benchmark_for_industry(industry, app_state.benchmarks)
+        benchmarks = get_benchmark_for_industry(industry.lower(), app_state.benchmarks)
         return {
-            "industry": industry,
+            "industry": industry.lower(),
             "benchmarks": benchmarks,
         }
     except BenchmarkError as e:
@@ -612,12 +694,6 @@ async def analyze_metrics(request: AnalyzeRequest):
 
         # Create analyzer and analyze
         analyzer = MetricsAnalyzer(industry=request.industry)
-
-        # Build metrics list for analyzer
-        metrics_list = [
-            {"metric": m.metric, "value": m.value}
-            for m in request.metrics
-        ]
 
         # Analyze
         analysis_results = analyzer.analyze_dict(metrics_dict)
@@ -934,7 +1010,6 @@ async def get_metric_history(
     useful for detailed trend analysis.
     """
     # Validate metric name
-    import re
     if not re.match(r"^[a-zA-Z][a-zA-Z0-9_-]*$", metric_name):
         raise HTTPException(status_code=400, detail="Invalid metric name format")
 
