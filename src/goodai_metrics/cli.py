@@ -52,6 +52,13 @@ from .cicd import (
     EXIT_THRESHOLD_FAILURE,
     EXIT_ANALYSIS_ERROR,
 )
+from .notifications import (
+    notify_analysis_complete,
+    notify_regression_detected,
+    notify_threshold_breach,
+    is_slack_webhook,
+    NotificationError,
+)
 
 
 # Sample data mapping
@@ -156,6 +163,72 @@ def _create_analyzer(industry: str, config: ProjectConfig) -> MetricsAnalyzer:
         custom_benchmarks=custom_benchmarks,
         benchmark_files=benchmark_files,
     )
+
+
+def _send_analysis_notifications(
+    config: ProjectConfig,
+    analysis_results: Dict,
+    recommendations: list,
+    overall_health: str,
+    regressions: list,
+) -> None:
+    """
+    Send notifications based on analysis results and config settings.
+
+    Handles regression notifications and threshold breach notifications
+    based on config.notifications settings.
+
+    Args:
+        config: Project configuration with notification settings.
+        analysis_results: Analysis results from analyzer.
+        recommendations: List of recommendations.
+        overall_health: Overall health status.
+        regressions: List of detected regressions.
+    """
+    # Check if notifications are configured
+    if not config.notifications or not config.notifications.webhook_url:
+        return
+
+    webhook_url = config.notifications.webhook_url
+    is_slack = is_slack_webhook(webhook_url)
+    project = config.project_name
+
+    # Send regression notification if enabled and regressions detected
+    if config.notifications.on_regression and regressions:
+        try:
+            notify_regression_detected(
+                webhook_url=webhook_url,
+                regressions=regressions,
+                project=project,
+                is_slack=is_slack,
+            )
+            click.echo("Regression notification sent", err=True)
+        except NotificationError as e:
+            click.echo(f"Warning: Failed to send regression notification: {e}", err=True)
+
+    # Send threshold breach notification if enabled and HIGH priority items exist
+    if config.notifications.on_threshold_breach:
+        high_priority_items = [r for r in recommendations if r.get("priority") == "HIGH"]
+        for item in high_priority_items[:3]:  # Limit to first 3 to avoid notification spam
+            try:
+                notify_threshold_breach(
+                    webhook_url=webhook_url,
+                    metric_name=item.get("metric", "unknown"),
+                    current_value=item.get("current_value", 0),
+                    threshold_value=item.get("benchmark_p50", 0),
+                    breach_type="high_priority",
+                    project=project,
+                    is_slack=is_slack,
+                )
+            except NotificationError as e:
+                click.echo(f"Warning: Failed to send threshold notification: {e}", err=True)
+                break  # Stop on first failure
+
+        if high_priority_items:
+            click.echo(
+                f"Threshold breach notification(s) sent for {min(len(high_priority_items), 3)} metric(s)",
+                err=True
+            )
 
 
 @click.group()
@@ -358,6 +431,15 @@ def analyze(
 
             except StorageError as e:
                 click.echo(f"Warning: Failed to store results: {e}", err=True)
+
+        # Send notifications if configured
+        _send_analysis_notifications(
+            config=config,
+            analysis_results=analysis_results,
+            recommendations=recommendations,
+            overall_health=overall_health,
+            regressions=regressions,
+        )
 
         # Format output
         if output_format == "json":

@@ -221,3 +221,57 @@ class TestCliListIndustries:
         assert "manufacturing" in result.output
         assert "insurance" in result.output
         assert "general" in result.output
+
+
+class TestNotificationIntegration:
+    """Tests for notification integration in CLI."""
+
+    def test_analyze_without_notifications_config(self, runner, sample_csv):
+        """Analyze works without notifications configured."""
+        result = runner.invoke(
+            main, ["analyze", str(sample_csv), "--industry", "manufacturing"]
+        )
+
+        assert result.exit_code == 0
+        # Should not have any notification errors
+        assert "Failed to send" not in result.output
+
+    def test_send_analysis_notifications_no_config(self):
+        """_send_analysis_notifications handles missing config gracefully."""
+        from goodai_metrics.cli import _send_analysis_notifications
+        from goodai_metrics.config import ProjectConfig
+
+        # Should not raise when no notifications configured
+        config = ProjectConfig()
+
+        _send_analysis_notifications(
+            config=config,
+            analysis_results={"metrics_analyzed": 1, "industry": "general"},
+            recommendations=[],
+            overall_health="HEALTHY",
+            regressions=[],
+        )
+        # Test passes if no exception raised
+
+    def test_send_analysis_notifications_no_webhook(self):
+        """_send_analysis_notifications handles empty webhook gracefully."""
+        from goodai_metrics.cli import _send_analysis_notifications
+        from goodai_metrics.config import ProjectConfig, NotificationsConfig
+
+        config = ProjectConfig(
+            notifications=NotificationsConfig(
+                on_regression=True,
+                on_threshold_breach=True,
+                webhook_url=None,  # No webhook
+            )
+        )
+
+        # Should not raise when webhook is None
+        _send_analysis_notifications(
+            config=config,
+            analysis_results={"metrics_analyzed": 1, "industry": "general"},
+            recommendations=[{"priority": "HIGH", "metric": "test", "current_value": 0.5}],
+            overall_health="CRITICAL",
+            regressions=[{"metric": "test", "current_gap_percent": 30}],
+        )
+        # Test passes if no exception raised
