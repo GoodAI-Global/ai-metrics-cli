@@ -26,6 +26,7 @@ from .config import (
     ProjectConfig,
     ConfigError,
 )
+from .storage import MetricsStorage, StorageError
 from .recommendations import (
     generate_all_recommendations,
     determine_overall_health,
@@ -82,9 +83,9 @@ thresholds:
 #   on_regression: true
 #   webhook_url: ${NOTIFICATION_WEBHOOK}
 
-# Storage settings (coming soon)
-# store_results: true
-# storage_path: .goodai-metrics/history.db
+# Storage settings
+store_results: false
+storage_path: .goodai-metrics/history.db
 '''
 
 
@@ -167,13 +168,19 @@ def main(ctx: click.Context, config_path: Optional[str]):
     default=None,
     help="Output format (default: from config or json)"
 )
+@click.option(
+    "--store/--no-store",
+    default=None,
+    help="Store results in history database (default: from config)"
+)
 @click.pass_context
 def analyze(
     ctx: click.Context,
     file: Optional[str],
     sample: Optional[str],
     industry: Optional[str],
-    output_format: Optional[str]
+    output_format: Optional[str],
+    store: Optional[bool]
 ):
     """
     Analyze AI metrics against industry benchmarks.
@@ -223,6 +230,27 @@ def analyze(
         # Generate recommendations
         recommendations = generate_all_recommendations(analysis_results, industry_benchmarks)
         overall_health = determine_overall_health(recommendations)
+
+        # Build full results
+        full_results = {
+            **analysis_results,
+            "recommendations": recommendations,
+            "overall_health": overall_health,
+        }
+
+        # Store results if enabled
+        should_store = store if store is not None else config.store_results
+        if should_store:
+            try:
+                storage_path = Path(config.storage_path) if config.storage_path else None
+                storage = MetricsStorage(db_path=storage_path)
+                run_id = storage.store_analysis(
+                    full_results,
+                    project=config.project_name
+                )
+                click.echo(f"Results stored (run_id: {run_id})", err=True)
+            except StorageError as e:
+                click.echo(f"Warning: Failed to store results: {e}", err=True)
 
         # Format output
         if output_format == "json":
@@ -468,6 +496,208 @@ def config(ctx: click.Context, show: bool, init_config: bool, path: bool):
             if target.maximum is not None:
                 click.echo(f", max={target.maximum}", nl=False)
             click.echo("")
+
+
+@main.command()
+@click.option(
+    "--project", "-p",
+    default=None,
+    help="Filter by project name"
+)
+@click.option(
+    "--industry", "-i",
+    default=None,
+    help="Filter by industry"
+)
+@click.option(
+    "--limit", "-n",
+    default=20,
+    type=int,
+    help="Number of records to show (default: 20)"
+)
+@click.option(
+    "--format", "-f",
+    "output_format",
+    type=click.Choice(["json", "text"]),
+    default="text",
+    help="Output format (default: text)"
+)
+@click.pass_context
+def history(
+    ctx: click.Context,
+    project: Optional[str],
+    industry: Optional[str],
+    limit: int,
+    output_format: str
+):
+    """
+    View analysis history from storage.
+
+    Examples:
+
+        goodai-metrics history
+
+        goodai-metrics history --project my-project --limit 10
+
+        goodai-metrics history -f json
+    """
+    config: ProjectConfig = ctx.obj.get("config", ProjectConfig())
+
+    try:
+        storage_path = Path(config.storage_path) if config.storage_path else None
+        storage = MetricsStorage(db_path=storage_path)
+
+        records = storage.list_analyses(
+            project=project,
+            industry=industry,
+            limit=limit
+        )
+
+        if not records:
+            click.echo("No analysis records found.")
+            return
+
+        if output_format == "json":
+            import json
+            output = json.dumps([r.to_dict() for r in records], indent=2)
+            click.echo(output)
+        else:
+            click.echo(f"Analysis History ({len(records)} records)")
+            click.echo("=" * 60)
+            for record in records:
+                click.echo(f"\n  Run ID:    {record.run_id}")
+                click.echo(f"  Timestamp: {record.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+                click.echo(f"  Project:   {record.project or '(default)'}")
+                click.echo(f"  Industry:  {record.industry}")
+                click.echo(f"  Health:    {record.overall_health}")
+                click.echo(f"  Metrics:   {record.metrics_count}")
+
+    except StorageError as e:
+        raise click.ClickException(f"Storage error: {e}")
+
+
+@main.command(name="history-show")
+@click.argument("run_id")
+@click.option(
+    "--format", "-f",
+    "output_format",
+    type=click.Choice(["json", "text"]),
+    default="json",
+    help="Output format (default: json)"
+)
+@click.pass_context
+def history_show(ctx: click.Context, run_id: str, output_format: str):
+    """
+    Show details of a specific analysis run.
+
+    Examples:
+
+        goodai-metrics history-show abc123def456
+
+        goodai-metrics history-show abc123 -f text
+    """
+    config: ProjectConfig = ctx.obj.get("config", ProjectConfig())
+
+    try:
+        storage_path = Path(config.storage_path) if config.storage_path else None
+        storage = MetricsStorage(db_path=storage_path)
+
+        record = storage.get_analysis(run_id)
+
+        if not record:
+            raise click.ClickException(f"No record found with run_id: {run_id}")
+
+        if output_format == "json":
+            import json
+            output = json.dumps(record.full_results, indent=2)
+            click.echo(output)
+        else:
+            results = record.full_results
+            recommendations = results.get("recommendations", [])
+            overall_health = results.get("overall_health", "unknown")
+
+            output = format_report_text(
+                results,
+                recommendations,
+                overall_health
+            )
+            click.echo(output)
+
+    except StorageError as e:
+        raise click.ClickException(f"Storage error: {e}")
+
+
+@main.command(name="history-stats")
+@click.pass_context
+def history_stats(ctx: click.Context):
+    """
+    Show storage statistics.
+
+    Examples:
+
+        goodai-metrics history-stats
+    """
+    config: ProjectConfig = ctx.obj.get("config", ProjectConfig())
+
+    try:
+        storage_path = Path(config.storage_path) if config.storage_path else None
+        storage = MetricsStorage(db_path=storage_path)
+
+        stats = storage.get_database_stats()
+
+        click.echo("Storage Statistics")
+        click.echo("=" * 40)
+        click.echo(f"Database path:    {stats['database_path']}")
+        click.echo(f"Database size:    {stats['database_size_bytes']:,} bytes")
+        click.echo(f"Total analyses:   {stats['total_analyses']}")
+        click.echo(f"Total metrics:    {stats['total_metric_values']}")
+        click.echo(f"Oldest record:    {stats['oldest_record'] or 'N/A'}")
+        click.echo(f"Newest record:    {stats['newest_record'] or 'N/A'}")
+
+    except StorageError as e:
+        raise click.ClickException(f"Storage error: {e}")
+
+
+@main.command(name="history-cleanup")
+@click.option(
+    "--days",
+    default=90,
+    type=int,
+    help="Delete records older than this many days (default: 90)"
+)
+@click.option(
+    "--yes", "-y",
+    is_flag=True,
+    help="Skip confirmation prompt"
+)
+@click.pass_context
+def history_cleanup(ctx: click.Context, days: int, yes: bool):
+    """
+    Delete old analysis records.
+
+    Examples:
+
+        goodai-metrics history-cleanup --days 30
+
+        goodai-metrics history-cleanup --days 60 --yes
+    """
+    config: ProjectConfig = ctx.obj.get("config", ProjectConfig())
+
+    if not yes:
+        click.confirm(
+            f"Delete all analysis records older than {days} days?",
+            abort=True
+        )
+
+    try:
+        storage_path = Path(config.storage_path) if config.storage_path else None
+        storage = MetricsStorage(db_path=storage_path)
+
+        deleted = storage.delete_old_records(days=days)
+        click.echo(f"Deleted {deleted} old record(s).")
+
+    except StorageError as e:
+        raise click.ClickException(f"Storage error: {e}")
 
 
 if __name__ == "__main__":

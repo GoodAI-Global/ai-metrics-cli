@@ -53,6 +53,12 @@ from .config import (
     CustomTarget,
     ConfigError,
 )
+from .storage import (
+    MetricsStorage,
+    AnalysisRecord,
+    MetricHistory,
+    StorageError,
+)
 
 __all__ = [
     # Package metadata
@@ -93,4 +99,9 @@ __all__ = [
     "NotificationsConfig",
     "CustomTarget",
     "ConfigError",
+    # Storage
+    "MetricsStorage",
+    "AnalysisRecord",
+    "MetricHistory",
+    "StorageError",
 ]
