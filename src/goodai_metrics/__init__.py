@@ -99,6 +99,17 @@ except ImportError:
     generate_comparison_pdf_report = None
     ReportError = None
 
+# Notifications
+from .notifications import (
+    send_webhook_notification,
+    send_slack_notification,
+    notify_analysis_complete,
+    notify_threshold_breach,
+    notify_regression_detected,
+    is_slack_webhook,
+    NotificationError,
+)
+
 __all__ = [
     # Package metadata
     "__version__",
@@ -165,4 +176,12 @@ __all__ = [
     "generate_pdf_report",
     "generate_comparison_pdf_report",
     "ReportError",
+    # Notifications
+    "send_webhook_notification",
+    "send_slack_notification",
+    "notify_analysis_complete",
+    "notify_threshold_breach",
+    "notify_regression_detected",
+    "is_slack_webhook",
+    "NotificationError",
 ]
