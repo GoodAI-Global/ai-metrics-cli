@@ -459,6 +459,221 @@ def compare(
         raise click.ClickException(f"Analysis error: {e}")
 
 
+@main.command()
+@click.argument("file", required=False, type=click.Path(exists=False))
+@click.option(
+    "--sample",
+    type=click.Choice(["manufacturing", "insurance", "aquaculture", "general"]),
+    help="Use built-in sample data for the specified industry"
+)
+@click.option(
+    "--industry", "-i",
+    default=None,
+    help="Industry for benchmark comparison"
+)
+@click.option(
+    "--output", "-o",
+    "output_path",
+    type=click.Path(),
+    default="report.pdf",
+    help="Output PDF file path (default: report.pdf)"
+)
+@click.option(
+    "--title", "-t",
+    default=None,
+    help="Custom report title"
+)
+@click.option(
+    "--description", "-d",
+    default=None,
+    help="Report description/notes"
+)
+@click.pass_context
+def report(
+    ctx: click.Context,
+    file: Optional[str],
+    sample: Optional[str],
+    industry: Optional[str],
+    output_path: str,
+    title: Optional[str],
+    description: Optional[str]
+):
+    """
+    Generate a PDF analysis report.
+
+    Analyzes metrics and generates a professional PDF report
+    with summary, recommendations, and detailed analysis.
+
+    Examples:
+
+        goodai-metrics report metrics.csv --output report.pdf
+
+        goodai-metrics report --sample manufacturing -o manufacturing_report.pdf
+
+        goodai-metrics report data.csv --title "Q4 AI Metrics Review"
+    """
+    try:
+        from .reports import generate_pdf_report, ReportError
+    except ImportError:
+        raise click.ClickException(
+            "PDF report generation requires reportlab. "
+            "Install with: pip install 'goodai-metrics[reports]'"
+        )
+
+    config: ProjectConfig = ctx.obj.get("config", ProjectConfig())
+    logger = get_logger(__name__)
+
+    # Determine file path
+    if sample:
+        filepath = get_sample_data_path(sample)
+        if industry is None:
+            industry = sample
+    elif file:
+        filepath = Path(file).resolve()
+        if not filepath.exists():
+            raise click.ClickException(f"File not found: {filepath}")
+    else:
+        raise click.ClickException(
+            "Please provide a CSV file path or use --sample <industry>"
+        )
+
+    # Apply config defaults
+    if industry is None:
+        industry = config.default_industry
+
+    output_file = Path(output_path)
+    if not output_file.suffix.lower() == ".pdf":
+        output_file = output_file.with_suffix(".pdf")
+
+    logger.event("report_generation_started", f"Generating PDF report for {filepath.name}")
+
+    try:
+        # Load benchmarks and analyze
+        benchmarks = load_benchmarks()
+        industry_benchmarks = get_benchmark_for_industry(industry, benchmarks)
+
+        analyzer = MetricsAnalyzer(industry=industry)
+        metrics = analyzer.load_csv(filepath)
+        analysis_results = analyzer.analyze(metrics)
+
+        # Generate recommendations
+        recommendations = generate_all_recommendations(analysis_results, industry_benchmarks)
+        overall_health = determine_overall_health(recommendations)
+
+        # Generate PDF
+        result_path = generate_pdf_report(
+            analysis_results=analysis_results,
+            recommendations=recommendations,
+            overall_health=overall_health,
+            output_path=output_file,
+            title=title,
+            description=description,
+            project_name=config.project_name,
+        )
+
+        click.echo(f"PDF report generated: {result_path}")
+        logger.event("report_generation_completed", f"Report saved to {result_path}")
+
+    except ReportError as e:
+        logger.error(f"Report error: {e}")
+        raise click.ClickException(f"Report error: {e}")
+    except BenchmarkError as e:
+        logger.error(f"Benchmark error: {e}")
+        raise click.ClickException(f"Benchmark error: {e}")
+    except AnalysisError as e:
+        logger.error(f"Analysis error: {e}")
+        raise click.ClickException(f"Analysis error: {e}")
+
+
+@main.command(name="report-compare")
+@click.argument("before_file", type=click.Path(exists=True))
+@click.argument("after_file", type=click.Path(exists=True))
+@click.option(
+    "--industry", "-i",
+    default=None,
+    help="Industry context"
+)
+@click.option(
+    "--output", "-o",
+    "output_path",
+    type=click.Path(),
+    default="comparison_report.pdf",
+    help="Output PDF file path (default: comparison_report.pdf)"
+)
+@click.option(
+    "--title", "-t",
+    default=None,
+    help="Custom report title"
+)
+@click.pass_context
+def report_compare(
+    ctx: click.Context,
+    before_file: str,
+    after_file: str,
+    industry: Optional[str],
+    output_path: str,
+    title: Optional[str]
+):
+    """
+    Generate a PDF comparison report.
+
+    Compares metrics between two time periods and generates
+    a professional PDF report showing changes.
+
+    Examples:
+
+        goodai-metrics report-compare before.csv after.csv
+
+        goodai-metrics report-compare q1.csv q2.csv -o q1_vs_q2.pdf
+
+        goodai-metrics report-compare old.csv new.csv --title "Monthly Review"
+    """
+    try:
+        from .reports import generate_comparison_pdf_report, ReportError
+    except ImportError:
+        raise click.ClickException(
+            "PDF report generation requires reportlab. "
+            "Install with: pip install 'goodai-metrics[reports]'"
+        )
+
+    config: ProjectConfig = ctx.obj.get("config", ProjectConfig())
+    logger = get_logger(__name__)
+
+    if industry is None:
+        industry = config.default_industry
+
+    output_file = Path(output_path)
+    if not output_file.suffix.lower() == ".pdf":
+        output_file = output_file.with_suffix(".pdf")
+
+    logger.event("comparison_report_started", f"Generating comparison report")
+
+    try:
+        from .analyzer import compare_metrics as do_compare
+        comparison_results = do_compare(
+            Path(before_file),
+            Path(after_file),
+            industry=industry
+        )
+
+        result_path = generate_comparison_pdf_report(
+            comparison_results=comparison_results,
+            output_path=output_file,
+            title=title,
+            project_name=config.project_name,
+        )
+
+        click.echo(f"PDF comparison report generated: {result_path}")
+        logger.event("comparison_report_completed", f"Report saved to {result_path}")
+
+    except ReportError as e:
+        logger.error(f"Report error: {e}")
+        raise click.ClickException(f"Report error: {e}")
+    except AnalysisError as e:
+        logger.error(f"Analysis error: {e}")
+        raise click.ClickException(f"Analysis error: {e}")
+
+
 @main.command(name="list-industries")
 def list_industries():
     """

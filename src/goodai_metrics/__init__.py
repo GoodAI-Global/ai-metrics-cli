@@ -85,6 +85,20 @@ except ImportError:
     create_app = None
     api_app = None
 
+# Reports are optional (requires reports extras)
+try:
+    from .reports import (
+        generate_pdf_report,
+        generate_comparison_pdf_report,
+        ReportError,
+    )
+    _HAS_REPORTS = True
+except ImportError:
+    _HAS_REPORTS = False
+    generate_pdf_report = None
+    generate_comparison_pdf_report = None
+    ReportError = None
+
 __all__ = [
     # Package metadata
     "__version__",
@@ -147,4 +161,8 @@ __all__ = [
     # API (optional)
     "create_app",
     "api_app",
+    # Reports (optional)
+    "generate_pdf_report",
+    "generate_comparison_pdf_report",
+    "ReportError",
 ]

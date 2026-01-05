@@ -38,13 +38,17 @@ server = [
     "uvicorn[standard]>=0.22.0",
     "pydantic>=2.0.0",
 ]
+reports = [
+    "reportlab>=4.0.0",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "httpx>=0.24.0",  # For testing FastAPI
+    "reportlab>=4.0.0",  # For testing PDF reports
 ]
 all = [
-    "goodai-metrics[server,dev]",
+    "goodai-metrics[server,reports,dev]",
 ]
 
 [project.scripts]
