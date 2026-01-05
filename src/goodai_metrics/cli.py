@@ -13,7 +13,7 @@ Usage:
 
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 
 import click
 
@@ -698,6 +698,202 @@ def history_cleanup(ctx: click.Context, days: int, yes: bool):
 
     except StorageError as e:
         raise click.ClickException(f"Storage error: {e}")
+
+
+@main.command()
+@click.option(
+    "--project", "-p",
+    default=None,
+    help="Filter by project name"
+)
+@click.option(
+    "--days", "-d",
+    default=30,
+    type=int,
+    help="Number of days to analyze (default: 30)"
+)
+@click.option(
+    "--format", "-f",
+    "output_format",
+    type=click.Choice(["json", "text"]),
+    default="text",
+    help="Output format (default: text)"
+)
+@click.pass_context
+def trends(ctx: click.Context, project: Optional[str], days: int, output_format: str):
+    """
+    Show historical metric trends.
+
+    Analyzes stored metrics over time to identify improving,
+    declining, and stable metrics.
+
+    Examples:
+
+        goodai-metrics trends
+
+        goodai-metrics trends --days 60 --project my-project
+
+        goodai-metrics trends -f json
+    """
+    config: ProjectConfig = ctx.obj.get("config", ProjectConfig())
+
+    try:
+        storage_path = Path(config.storage_path) if config.storage_path else None
+        storage = MetricsStorage(db_path=storage_path)
+
+        summary = storage.get_trend_summary(project=project, days=days)
+
+        if output_format == "json":
+            import json
+            output = json.dumps(summary, indent=2)
+            click.echo(output)
+        else:
+            _format_trends_text(summary, days, project)
+
+    except StorageError as e:
+        raise click.ClickException(f"Storage error: {e}")
+
+
+def _format_trends_text(summary: Dict, days: int, project: Optional[str]) -> None:
+    """Format trend summary as text output."""
+    click.echo(f"Metric Trends (last {days} days)")
+    if project:
+        click.echo(f"Project: {project}")
+    click.echo("=" * 60)
+
+    if summary["total_analyses"] == 0:
+        click.echo("\nNo analysis records found in this period.")
+        click.echo("Run 'goodai-metrics analyze --store' to start tracking.")
+        return
+
+    click.echo(f"\nTotal analyses: {summary['total_analyses']}")
+    click.echo(f"Metrics tracked: {summary['metrics_tracked']}")
+
+    if not summary["trends"]:
+        click.echo("\nInsufficient data for trend analysis.")
+        click.echo("At least 2 analyses are needed per metric.")
+        return
+
+    # Summary counts
+    improving = summary.get("improving", 0)
+    declining = summary.get("declining", 0)
+    stable = summary.get("stable", 0)
+
+    click.echo(f"\nSummary: {improving} improving, {declining} declining, {stable} stable")
+
+    # Show declining metrics first (most actionable)
+    declining_trends = [t for t in summary["trends"] if t["direction"] == "declining"]
+    if declining_trends:
+        click.echo("\n[DECLINING]")
+        for trend in declining_trends:
+            click.echo(f"  {trend['metric']}: {trend['first_value']:.2f} -> {trend['last_value']:.2f} ({trend['change_percent']:+.1f}%)")
+
+    # Then improving
+    improving_trends = [t for t in summary["trends"] if t["direction"] == "improving"]
+    if improving_trends:
+        click.echo("\n[IMPROVING]")
+        for trend in improving_trends:
+            click.echo(f"  {trend['metric']}: {trend['first_value']:.2f} -> {trend['last_value']:.2f} ({trend['change_percent']:+.1f}%)")
+
+    # Then stable
+    stable_trends = [t for t in summary["trends"] if t["direction"] == "stable"]
+    if stable_trends:
+        click.echo("\n[STABLE]")
+        for trend in stable_trends:
+            click.echo(f"  {trend['metric']}: {trend['first_value']:.2f} (no change)")
+
+
+@main.command(name="metric-history")
+@click.argument("metric_name")
+@click.option(
+    "--project", "-p",
+    default=None,
+    help="Filter by project name"
+)
+@click.option(
+    "--days", "-d",
+    default=30,
+    type=int,
+    help="Number of days to look back (default: 30)"
+)
+@click.option(
+    "--format", "-f",
+    "output_format",
+    type=click.Choice(["json", "text"]),
+    default="text",
+    help="Output format (default: text)"
+)
+@click.pass_context
+def metric_history(
+    ctx: click.Context,
+    metric_name: str,
+    project: Optional[str],
+    days: int,
+    output_format: str
+):
+    """
+    Show history for a specific metric.
+
+    Displays all recorded values for a metric over time.
+
+    Examples:
+
+        goodai-metrics metric-history accuracy
+
+        goodai-metrics metric-history latency_ms --days 60
+
+        goodai-metrics metric-history error_rate -f json
+    """
+    config: ProjectConfig = ctx.obj.get("config", ProjectConfig())
+
+    try:
+        storage_path = Path(config.storage_path) if config.storage_path else None
+        storage = MetricsStorage(db_path=storage_path)
+
+        history = storage.get_metric_history(metric_name, project=project, days=days)
+
+        if output_format == "json":
+            import json
+            output = json.dumps(history.to_dict(), indent=2)
+            click.echo(output)
+        else:
+            _format_metric_history_text(history, days, project)
+
+    except StorageError as e:
+        raise click.ClickException(f"Storage error: {e}")
+
+
+def _format_metric_history_text(history, days: int, project: Optional[str]) -> None:
+    """Format metric history as text output."""
+    click.echo(f"Metric History: {history.metric_name} (last {days} days)")
+    if project:
+        click.echo(f"Project: {project}")
+    click.echo("=" * 60)
+
+    if not history.values:
+        click.echo("\nNo data found for this metric.")
+        return
+
+    click.echo(f"\nRecorded values: {len(history.values)}")
+    click.echo("")
+    click.echo("  Timestamp              Value       Gap%   Priority")
+    click.echo("  " + "-" * 50)
+
+    for entry in history.values:
+        ts = entry.get("timestamp", "N/A")[:19]  # Truncate to datetime
+        value = entry.get("value", 0)
+        gap = entry.get("gap_percent", 0)
+        priority = entry.get("priority", "-")
+        click.echo(f"  {ts}  {value:10.3f}  {gap:6.1f}%  {priority or '-'}")
+
+    # Show trend if enough data
+    if len(history.values) >= 2:
+        first = history.values[0]["value"]
+        last = history.values[-1]["value"]
+        if first != 0:
+            change = ((last - first) / abs(first)) * 100
+            direction = "improved" if change > 0 else "declined" if change < 0 else "unchanged"
+            click.echo(f"\nTrend: {first:.3f} -> {last:.3f} ({change:+.1f}%, {direction})")
 
 
 if __name__ == "__main__":
