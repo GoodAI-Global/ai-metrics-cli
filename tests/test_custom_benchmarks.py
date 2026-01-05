@@ -131,6 +131,56 @@ class TestValidateBenchmarkData:
         with pytest.raises(BenchmarkError, match="must contain a metrics object"):
             validate_benchmark_data(data, "test")
 
+    def test_nan_value_raises(self):
+        """NaN percentile value raises error."""
+        data = {
+            "test_industry": {
+                "metric1": {"p25": float("nan"), "p50": 0.8, "p75": 0.9, "p90": 0.95},
+            }
+        }
+        with pytest.raises(BenchmarkError, match="must be a finite number"):
+            validate_benchmark_data(data, "test")
+
+    def test_inf_value_raises(self):
+        """Infinity percentile value raises error."""
+        data = {
+            "test_industry": {
+                "metric1": {"p25": 0.7, "p50": float("inf"), "p75": 0.9, "p90": 0.95},
+            }
+        }
+        with pytest.raises(BenchmarkError, match="must be a finite number"):
+            validate_benchmark_data(data, "test")
+
+    def test_invalid_industry_name_raises(self):
+        """Invalid industry name raises error."""
+        data = {
+            "invalid industry!": {
+                "metric1": {"p25": 0.7, "p50": 0.8, "p75": 0.9, "p90": 0.95},
+            }
+        }
+        with pytest.raises(BenchmarkError, match="Invalid industry name"):
+            validate_benchmark_data(data, "test")
+
+    def test_invalid_metric_name_raises(self):
+        """Invalid metric name raises error."""
+        data = {
+            "test_industry": {
+                "invalid metric!": {"p25": 0.7, "p50": 0.8, "p75": 0.9, "p90": 0.95},
+            }
+        }
+        with pytest.raises(BenchmarkError, match="Invalid metric name"):
+            validate_benchmark_data(data, "test")
+
+    def test_name_validation_can_be_disabled(self):
+        """Name validation can be disabled."""
+        data = {
+            "any name here!": {
+                "any metric!": {"p25": 0.7, "p50": 0.8, "p75": 0.9, "p90": 0.95},
+            }
+        }
+        # Should not raise with validate_names=False
+        validate_benchmark_data(data, "test", validate_names=False)
+
 
 class TestMergeBenchmarks:
     """Tests for merge_benchmarks function."""
@@ -270,6 +320,22 @@ class TestCreateCustomIndustry:
         }
         with pytest.raises(BenchmarkError):
             create_custom_industry("my_industry", metrics)
+
+    def test_invalid_industry_name_raises(self):
+        """Invalid industry name raises error."""
+        metrics = {
+            "metric1": {"p25": 0.7, "p50": 0.8, "p75": 0.9, "p90": 0.95},
+        }
+        with pytest.raises(BenchmarkError, match="Invalid industry name"):
+            create_custom_industry("invalid industry!", metrics)
+
+    def test_industry_name_with_spaces_raises(self):
+        """Industry name with spaces raises error."""
+        metrics = {
+            "metric1": {"p25": 0.7, "p50": 0.8, "p75": 0.9, "p90": 0.95},
+        }
+        with pytest.raises(BenchmarkError, match="Invalid industry name"):
+            create_custom_industry("my industry", metrics)
 
 
 class TestConfigCustomBenchmarks:

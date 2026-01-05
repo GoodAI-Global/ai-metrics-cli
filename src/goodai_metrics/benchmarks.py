@@ -6,6 +6,8 @@ Supports custom benchmarks from config files and additional JSON/YAML files.
 """
 
 import json
+import math
+import re
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
@@ -17,6 +19,14 @@ class BenchmarkError(Exception):
 
 # Required percentile keys for validation
 REQUIRED_PERCENTILE_KEYS = {"p25", "p50", "p75", "p90"}
+
+# Security limits
+MAX_BENCHMARK_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_INDUSTRIES = 500
+MAX_METRICS_PER_INDUSTRY = 200
+
+# Valid name pattern for industries and metrics
+VALID_NAME_PATTERN = re.compile(r'^[\w][\w_-]{0,99}$')
 
 
 def get_benchmarks_path() -> Path:
@@ -167,13 +177,18 @@ def get_percentile_rank(value: float, benchmark: Dict[str, float], higher_is_bet
             return "below_p25"
 
 
-def validate_benchmark_data(data: Dict[str, Any], source: str = "unknown") -> None:
+def validate_benchmark_data(
+    data: Dict[str, Any],
+    source: str = "unknown",
+    validate_names: bool = True,
+) -> None:
     """
     Validate benchmark data structure.
 
     Args:
         data: Benchmark data to validate.
         source: Description of data source for error messages.
+        validate_names: If True, validate industry/metric name format.
 
     Raises:
         BenchmarkError: If data structure is invalid.
@@ -181,13 +196,40 @@ def validate_benchmark_data(data: Dict[str, Any], source: str = "unknown") -> No
     if not isinstance(data, dict):
         raise BenchmarkError(f"{source}: Benchmark data must be a JSON object")
 
+    # Check industry count limit
+    if len(data) > MAX_INDUSTRIES:
+        raise BenchmarkError(
+            f"{source}: Too many industries ({len(data)}). Maximum is {MAX_INDUSTRIES}"
+        )
+
     for industry, metrics in data.items():
+        # Validate industry name format
+        if validate_names and not VALID_NAME_PATTERN.match(str(industry)):
+            raise BenchmarkError(
+                f"{source}: Invalid industry name '{industry}'. "
+                "Use only letters, numbers, underscores, and hyphens (max 100 chars)."
+            )
+
         if not isinstance(metrics, dict):
             raise BenchmarkError(
                 f"{source}: Industry '{industry}' must contain a metrics object"
             )
 
+        # Check metric count limit
+        if len(metrics) > MAX_METRICS_PER_INDUSTRY:
+            raise BenchmarkError(
+                f"{source}: Too many metrics in '{industry}' ({len(metrics)}). "
+                f"Maximum is {MAX_METRICS_PER_INDUSTRY}"
+            )
+
         for metric_name, percentiles in metrics.items():
+            # Validate metric name format
+            if validate_names and not VALID_NAME_PATTERN.match(str(metric_name)):
+                raise BenchmarkError(
+                    f"{source}: Invalid metric name '{metric_name}' in '{industry}'. "
+                    "Use only letters, numbers, underscores, and hyphens (max 100 chars)."
+                )
+
             if not isinstance(percentiles, dict):
                 raise BenchmarkError(
                     f"{source}: Metric '{metric_name}' in '{industry}' must contain percentile data"
@@ -199,10 +241,14 @@ def validate_benchmark_data(data: Dict[str, Any], source: str = "unknown") -> No
                     f"{source}: Metric '{metric_name}' in '{industry}' missing percentiles: {missing}"
                 )
 
-            # Validate numeric values
+            # Validate numeric values (check for NaN/Inf)
             for key in REQUIRED_PERCENTILE_KEYS:
                 try:
-                    float(percentiles[key])
+                    val = float(percentiles[key])
+                    if math.isnan(val) or math.isinf(val):
+                        raise BenchmarkError(
+                            f"{source}: {industry}.{metric_name}.{key} must be a finite number"
+                        )
                 except (ValueError, TypeError):
                     raise BenchmarkError(
                         f"{source}: {industry}.{metric_name}.{key} must be a number"
@@ -230,6 +276,17 @@ def load_benchmark_file(filepath: Path) -> Dict[str, Any]:
     # Security: Validate path doesn't escape allowed directories
     if ".." in str(filepath):
         raise BenchmarkError(f"Benchmark file path cannot contain '..': {filepath}")
+
+    # Security: Check file size before reading
+    try:
+        file_size = filepath.stat().st_size
+        if file_size > MAX_BENCHMARK_FILE_SIZE:
+            raise BenchmarkError(
+                f"Benchmark file too large: {file_size} bytes "
+                f"(max {MAX_BENCHMARK_FILE_SIZE // (1024 * 1024)} MB)"
+            )
+    except OSError as e:
+        raise BenchmarkError(f"Cannot access benchmark file {filepath}: {e}")
 
     suffix = filepath.suffix.lower()
 
@@ -325,12 +382,8 @@ def load_benchmarks_with_custom(
     # Load additional files
     if additional_files:
         for filepath in additional_files:
-            try:
-                additional = load_benchmark_file(Path(filepath))
-                sources.append(additional)
-            except BenchmarkError:
-                # Re-raise with context
-                raise
+            additional = load_benchmark_file(Path(filepath))
+            sources.append(additional)
 
     # Add inline custom benchmarks
     if custom_benchmarks:
@@ -357,8 +410,15 @@ def create_custom_industry(
         Benchmark dict that can be merged with other benchmarks.
 
     Raises:
-        BenchmarkError: If metric data is invalid.
+        BenchmarkError: If industry name or metric data is invalid.
     """
+    # Validate industry name format
+    if not VALID_NAME_PATTERN.match(str(industry_name)):
+        raise BenchmarkError(
+            f"Invalid industry name '{industry_name}'. "
+            "Use only letters, numbers, underscores, and hyphens (max 100 chars)."
+        )
+
     data = {industry_name: metrics}
     validate_benchmark_data(data, f"custom industry '{industry_name}'")
     return data
