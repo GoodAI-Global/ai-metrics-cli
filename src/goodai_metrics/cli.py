@@ -53,7 +53,6 @@ from .cicd import (
     EXIT_ANALYSIS_ERROR,
 )
 from .notifications import (
-    notify_analysis_complete,
     notify_regression_detected,
     notify_threshold_breach,
     is_slack_webhook,
@@ -98,9 +97,10 @@ thresholds:
   max_gap_percent: 30.0
   max_high_priority: 0
 
-# Notifications (coming soon)
+# Webhook notifications
 # notifications:
 #   on_regression: true
+#   on_threshold_breach: true
 #   webhook_url: ${NOTIFICATION_WEBHOOK}
 
 # Storage settings
