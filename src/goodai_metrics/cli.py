@@ -943,5 +943,91 @@ def _format_metric_history_text(history, days: int, project: Optional[str]) -> N
             click.echo(f"\nTrend: {first:.3f} -> {last:.3f} ({change:+.1f}%, {direction})")
 
 
+@main.command()
+@click.option(
+    "--host", "-h",
+    default="127.0.0.1",
+    help="Host to bind (default: 127.0.0.1)"
+)
+@click.option(
+    "--port", "-p",
+    default=8000,
+    type=int,
+    help="Port to bind (default: 8000)"
+)
+@click.option(
+    "--reload",
+    is_flag=True,
+    help="Enable auto-reload for development"
+)
+@click.option(
+    "--cors-origins",
+    default=None,
+    help="Comma-separated list of allowed CORS origins (default: all)"
+)
+@click.option(
+    "--rate-limit",
+    default=100,
+    type=int,
+    help="Requests per minute rate limit (0 to disable, default: 100)"
+)
+@click.option(
+    "--workers", "-w",
+    default=1,
+    type=int,
+    help="Number of worker processes (default: 1)"
+)
+def serve(
+    host: str,
+    port: int,
+    reload: bool,
+    cors_origins: Optional[str],
+    rate_limit: int,
+    workers: int
+):
+    """
+    Start the REST API server.
+
+    Launches an HTTP server exposing the metrics analysis API
+    for integration with web applications and dashboards.
+
+    Examples:
+
+        goodai-metrics serve
+
+        goodai-metrics serve --host 0.0.0.0 --port 8080
+
+        goodai-metrics serve --reload  # Development mode
+
+        goodai-metrics serve --workers 4  # Production mode
+    """
+    try:
+        import uvicorn
+    except ImportError:
+        raise click.ClickException(
+            "uvicorn is required for the server. "
+            "Install with: pip install 'goodai-metrics[server]'"
+        )
+
+    # Parse CORS origins
+    origins = None
+    if cors_origins:
+        origins = [o.strip() for o in cors_origins.split(",")]
+
+    click.echo(f"Starting Good AI Metrics API server at http://{host}:{port}")
+    click.echo(f"API documentation: http://{host}:{port}/api/docs")
+    click.echo("Press CTRL+C to stop")
+
+    # Configure and run uvicorn
+    uvicorn.run(
+        "goodai_metrics.api:app",
+        host=host,
+        port=port,
+        reload=reload,
+        workers=workers if not reload else 1,
+        log_level="info",
+    )
+
+
 if __name__ == "__main__":
     main()

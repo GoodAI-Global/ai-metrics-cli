@@ -70,6 +70,15 @@ from .logging_config import (
     ContextLogger,
 )
 
+# API is optional (requires server extras)
+try:
+    from .api import create_app, app as api_app
+    _HAS_API = True
+except ImportError:
+    _HAS_API = False
+    create_app = None
+    api_app = None
+
 __all__ = [
     # Package metadata
     "__version__",
@@ -123,4 +132,7 @@ __all__ = [
     "JSONFormatter",
     "HumanFormatter",
     "ContextLogger",
+    # API (optional)
+    "create_app",
+    "api_app",
 ]

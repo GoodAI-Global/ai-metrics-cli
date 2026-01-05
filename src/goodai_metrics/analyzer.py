@@ -159,6 +159,24 @@ class MetricsAnalyzer:
 
         return results
 
+    def analyze_dict(self, metrics: Dict[str, float]) -> Dict[str, Any]:
+        """
+        Analyze metrics from a dictionary.
+
+        Convenience method for API usage where metrics come as key-value pairs.
+
+        Args:
+            metrics: Dictionary mapping metric names to values.
+
+        Returns:
+            Analysis results dictionary.
+        """
+        metric_values = [
+            MetricValue(name=name, value=value)
+            for name, value in metrics.items()
+        ]
+        return self.analyze(metric_values)
+
     def _analyze_metric(self, metric: MetricValue, benchmark: Dict) -> Dict[str, Any]:
         """
         Analyze a single metric against its benchmark.
