@@ -9,7 +9,7 @@ import io
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional, BinaryIO
+from typing import Dict, Any, List, Optional
 
 
 class ReportError(Exception):
@@ -89,7 +89,6 @@ def generate_pdf_report(
     output_path: Path,
     title: Optional[str] = None,
     description: Optional[str] = None,
-    include_charts: bool = True,
     project_name: Optional[str] = None,
 ) -> Path:
     """
@@ -102,7 +101,6 @@ def generate_pdf_report(
         output_path: Path for the output PDF file.
         title: Optional custom report title.
         description: Optional report description/notes.
-        include_charts: Whether to include visual charts.
         project_name: Optional project name for the header.
 
     Returns:
@@ -136,7 +134,6 @@ def generate_pdf_report(
             overall_health=overall_health,
             title=title,
             description=description,
-            include_charts=include_charts,
             project_name=project_name,
         )
 
@@ -164,7 +161,6 @@ def _build_pdf_report(
     overall_health: str,
     title: str,
     description: str,
-    include_charts: bool,
     project_name: str,
 ) -> bytes:
     """
@@ -466,6 +462,14 @@ def generate_comparison_pdf_report(
     output_path = Path(output_path)
     _validate_output_path(output_path)
 
+    # Validate input size
+    comparisons = comparison_results.get("comparisons", [])
+    if len(comparisons) > MAX_METRICS_IN_REPORT:
+        raise ReportError(
+            f"Too many comparisons ({len(comparisons)}). "
+            f"Maximum is {MAX_METRICS_IN_REPORT}"
+        )
+
     title = _sanitize_text(title or "AI Metrics Comparison Report", MAX_TITLE_LENGTH)
     project_name = _sanitize_text(project_name or "", MAX_TITLE_LENGTH)
 
@@ -475,6 +479,13 @@ def generate_comparison_pdf_report(
             title=title,
             project_name=project_name,
         )
+
+        # Validate output size
+        if len(pdf_content) > MAX_OUTPUT_FILE_SIZE:
+            raise ReportError(
+                f"Generated PDF exceeds maximum size "
+                f"({len(pdf_content) // (1024 * 1024)} MB)"
+            )
 
         output_path.write_bytes(pdf_content)
         return output_path
