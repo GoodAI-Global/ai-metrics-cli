@@ -8,16 +8,33 @@ Provides persistent storage of analysis results with support for:
 
 Storage follows the 'Evidence over opinions' principle by preserving
 actual measurements for data-driven decision making.
+
+Thread Safety:
+- Each database operation creates a new connection
+- SQLite handles concurrent access with locking
+- Not suitable for high-concurrency write scenarios
 """
 
 import sqlite3
 import json
 import hashlib
+import uuid
+import logging
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Generator
 from dataclasses import dataclass
+
+
+logger = logging.getLogger(__name__)
+
+# Validation constants
+MAX_STRING_FIELD_SIZE = 1000
+MAX_JSON_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_LIMIT = 10000
+MAX_OFFSET = 1000000
+MAX_DAYS = 3650  # 10 years
 
 
 class StorageError(Exception):
@@ -120,26 +137,62 @@ class MetricsStorage:
     SQLite-based storage for metrics analysis history.
 
     Supports storing, retrieving, and analyzing historical metrics data.
-    Thread-safe with connection pooling per thread.
+
+    Thread Safety:
+    - Each database operation creates a new connection
+    - SQLite handles concurrent access with locking
+    - For high-concurrency scenarios, consider WAL mode
     """
 
     DEFAULT_DB_NAME = ".goodai-metrics/history.db"
+    DEFAULT_DB_TIMEOUT = 30.0  # seconds
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Optional[Path] = None, timeout: float = DEFAULT_DB_TIMEOUT):
         """
         Initialize storage with database path.
 
         Args:
             db_path: Path to SQLite database. If None, uses default location.
+            timeout: Database connection timeout in seconds.
+
+        Raises:
+            StorageError: If path validation fails.
         """
         if db_path is None:
             db_path = Path.cwd() / self.DEFAULT_DB_NAME
         else:
             db_path = Path(db_path)
 
-        self.db_path = db_path
+        # Validate path (prevent path traversal)
+        self._validate_db_path(db_path)
+
+        self.db_path = db_path.resolve()
+        self.timeout = timeout
         self._ensure_directory()
         self._initialize_schema()
+
+    def _validate_db_path(self, db_path: Path) -> None:
+        """Validate database path is safe."""
+        path_str = str(db_path)
+
+        # Check for path traversal
+        if '..' in path_str:
+            raise StorageError(f"Database path cannot contain '..': {path_str}")
+
+        # If absolute path, must be within allowed directories
+        if db_path.is_absolute():
+            home = Path.home()
+            allowed_roots = [Path('/tmp'), home, Path('/var/tmp'), Path.cwd()]
+
+            is_allowed = any(
+                path_str.startswith(str(root.resolve()))
+                for root in allowed_roots
+            )
+
+            if not is_allowed:
+                raise StorageError(
+                    f"Absolute database path must be within home, tmp, or project directory: {path_str}"
+                )
 
     def _ensure_directory(self) -> None:
         """Ensure the database directory exists."""
@@ -148,10 +201,11 @@ class MetricsStorage:
     @contextmanager
     def _get_connection(self) -> Generator[sqlite3.Connection, None, None]:
         """Get a database connection with proper configuration."""
-        conn = sqlite3.connect(str(self.db_path), timeout=30.0)
+        conn = sqlite3.connect(str(self.db_path), timeout=self.timeout)
         conn.row_factory = sqlite3.Row
-        # Enable foreign key support
+        # Enable foreign key support and WAL mode for better concurrency
         conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
         try:
             yield conn
             conn.commit()
@@ -179,9 +233,45 @@ class MetricsStorage:
                 )
 
     def _generate_run_id(self, timestamp: datetime, industry: str, project: Optional[str]) -> str:
-        """Generate a unique run ID."""
-        data = f"{timestamp.isoformat()}-{industry}-{project or 'default'}"
+        """Generate a unique run ID with entropy for collision resistance."""
+        # Include UUID4 for uniqueness even with identical timestamps
+        data = f"{timestamp.isoformat()}-{industry}-{project or 'default'}-{uuid.uuid4()}"
         return hashlib.sha256(data.encode()).hexdigest()[:16]
+
+    def _validate_results(self, results: Dict[str, Any]) -> None:
+        """Validate analysis results structure and content."""
+        if not isinstance(results, dict):
+            raise StorageError("Results must be a dictionary")
+
+        # Validate industry
+        industry = results.get("industry", "general")
+        if not isinstance(industry, str) or not industry.strip():
+            raise StorageError("Industry must be non-empty string")
+        if len(industry) > MAX_STRING_FIELD_SIZE:
+            raise StorageError(f"Industry exceeds {MAX_STRING_FIELD_SIZE} characters")
+
+        # Validate analysis list
+        analysis_list = results.get("analysis", [])
+        if not isinstance(analysis_list, list):
+            raise StorageError("Analysis must be a list")
+
+        for i, analysis in enumerate(analysis_list):
+            if not isinstance(analysis, dict):
+                raise StorageError(f"Analysis item {i} must be a dictionary")
+            if "metric" not in analysis:
+                raise StorageError(f"Analysis item {i} missing required 'metric' field")
+            if not isinstance(analysis.get("metric"), str):
+                raise StorageError(f"Metric name in item {i} must be a string")
+
+        # Validate recommendations list
+        recommendations = results.get("recommendations", [])
+        if not isinstance(recommendations, list):
+            raise StorageError("Recommendations must be a list")
+
+        # Validate JSON size
+        results_json = json.dumps(results)
+        if len(results_json) > MAX_JSON_SIZE:
+            raise StorageError(f"Results exceed maximum size of {MAX_JSON_SIZE} bytes")
 
     def store_analysis(
         self,
@@ -201,8 +291,18 @@ class MetricsStorage:
             The run_id of the stored analysis.
 
         Raises:
-            StorageError: If storage operation fails.
+            StorageError: If storage operation fails or validation fails.
         """
+        # Validate input
+        self._validate_results(results)
+
+        # Validate project name
+        if project is not None:
+            if not isinstance(project, str):
+                raise StorageError("Project must be a string")
+            if len(project) > MAX_STRING_FIELD_SIZE:
+                raise StorageError(f"Project name exceeds {MAX_STRING_FIELD_SIZE} characters")
+
         if timestamp is None:
             timestamp = datetime.now(timezone.utc)
 
@@ -290,6 +390,45 @@ class MetricsStorage:
         except sqlite3.Error as e:
             raise StorageError(f"Failed to store analysis: {e}")
 
+    def _parse_analysis_row(self, row: sqlite3.Row) -> AnalysisRecord:
+        """Parse a database row into an AnalysisRecord with proper error handling."""
+        run_id = row["run_id"]
+
+        # Parse timestamp with error handling
+        try:
+            timestamp = datetime.fromisoformat(row["timestamp"])
+        except (ValueError, TypeError) as e:
+            raise StorageError(
+                f"Invalid timestamp format for run {run_id}: {row['timestamp']}"
+            )
+
+        # Parse JSON with error handling
+        try:
+            summary = json.loads(row["summary_json"])
+        except json.JSONDecodeError as e:
+            raise StorageError(
+                f"Corrupted summary JSON for run {run_id}: {e}"
+            )
+
+        try:
+            full_results = json.loads(row["full_results_json"])
+        except json.JSONDecodeError as e:
+            raise StorageError(
+                f"Corrupted results JSON for run {run_id}: {e}"
+            )
+
+        return AnalysisRecord(
+            id=row["id"],
+            run_id=run_id,
+            project=row["project"],
+            industry=row["industry"],
+            timestamp=timestamp,
+            metrics_count=row["metrics_count"],
+            overall_health=row["overall_health"],
+            summary=summary,
+            full_results=full_results,
+        )
+
     def get_analysis(self, run_id: str) -> Optional[AnalysisRecord]:
         """
         Retrieve a specific analysis by run ID.
@@ -299,7 +438,13 @@ class MetricsStorage:
 
         Returns:
             AnalysisRecord if found, None otherwise.
+
+        Raises:
+            StorageError: If retrieval fails or data is corrupted.
         """
+        if not run_id or not isinstance(run_id, str):
+            raise StorageError("run_id must be a non-empty string")
+
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -316,17 +461,7 @@ class MetricsStorage:
                 if row is None:
                     return None
 
-                return AnalysisRecord(
-                    id=row["id"],
-                    run_id=row["run_id"],
-                    project=row["project"],
-                    industry=row["industry"],
-                    timestamp=datetime.fromisoformat(row["timestamp"]),
-                    metrics_count=row["metrics_count"],
-                    overall_health=row["overall_health"],
-                    summary=json.loads(row["summary_json"]),
-                    full_results=json.loads(row["full_results_json"]),
-                )
+                return self._parse_analysis_row(row)
 
         except sqlite3.Error as e:
             raise StorageError(f"Failed to retrieve analysis: {e}")
@@ -344,12 +479,25 @@ class MetricsStorage:
         Args:
             project: Filter by project name.
             industry: Filter by industry.
-            limit: Maximum records to return.
-            offset: Number of records to skip.
+            limit: Maximum records to return (1-10000).
+            offset: Number of records to skip (0-1000000).
 
         Returns:
             List of AnalysisRecord objects.
+
+        Raises:
+            StorageError: If parameters are invalid or query fails.
         """
+        # Validate parameters
+        if not isinstance(limit, int) or limit <= 0:
+            raise StorageError("limit must be a positive integer")
+        if limit > MAX_LIMIT:
+            raise StorageError(f"limit cannot exceed {MAX_LIMIT}")
+        if not isinstance(offset, int) or offset < 0:
+            raise StorageError("offset must be a non-negative integer")
+        if offset > MAX_OFFSET:
+            raise StorageError(f"offset cannot exceed {MAX_OFFSET}")
+
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -377,17 +525,7 @@ class MetricsStorage:
 
                 records = []
                 for row in cursor.fetchall():
-                    records.append(AnalysisRecord(
-                        id=row["id"],
-                        run_id=row["run_id"],
-                        project=row["project"],
-                        industry=row["industry"],
-                        timestamp=datetime.fromisoformat(row["timestamp"]),
-                        metrics_count=row["metrics_count"],
-                        overall_health=row["overall_health"],
-                        summary=json.loads(row["summary_json"]),
-                        full_results=json.loads(row["full_results_json"]),
-                    ))
+                    records.append(self._parse_analysis_row(row))
 
                 return records
 
@@ -406,11 +544,22 @@ class MetricsStorage:
         Args:
             metric_name: Name of the metric to track.
             project: Filter by project name.
-            days: Number of days to look back.
+            days: Number of days to look back (1-3650).
 
         Returns:
             MetricHistory with all values.
+
+        Raises:
+            StorageError: If parameters are invalid or query fails.
         """
+        # Validate parameters
+        if not metric_name or not isinstance(metric_name, str):
+            raise StorageError("metric_name must be a non-empty string")
+        if not isinstance(days, int) or days <= 0:
+            raise StorageError("days must be a positive integer")
+        if days > MAX_DAYS:
+            raise StorageError(f"days cannot exceed {MAX_DAYS}")
+
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -545,11 +694,22 @@ class MetricsStorage:
         Args:
             current_results: Current analysis results.
             project: Project to compare against.
-            threshold_percent: Minimum change to consider a regression.
+            threshold_percent: Minimum change to consider a regression (0-100).
 
         Returns:
             List of regression alerts.
+
+        Raises:
+            StorageError: If parameters are invalid or retrieval fails.
         """
+        # Validate parameters
+        if not isinstance(current_results, dict):
+            raise StorageError("current_results must be a dictionary")
+        if not isinstance(threshold_percent, (int, float)):
+            raise StorageError("threshold_percent must be numeric")
+        if threshold_percent < 0 or threshold_percent > 100:
+            raise StorageError("threshold_percent must be between 0 and 100")
+
         try:
             # Get most recent previous analysis
             previous = self.list_analyses(project=project, limit=1)
@@ -582,50 +742,68 @@ class MetricsStorage:
 
             return regressions
 
-        except StorageError:
-            return []
+        except StorageError as e:
+            logger.error(f"Failed to detect regressions: {e}", exc_info=True)
+            raise
 
     def delete_old_records(self, days: int = 90) -> int:
         """
         Delete analysis records older than specified days.
 
         Args:
-            days: Delete records older than this many days.
+            days: Delete records older than this many days (1-3650).
 
         Returns:
             Number of records deleted.
+
+        Raises:
+            StorageError: If parameters are invalid or deletion fails.
         """
+        # Validate parameters
+        if not isinstance(days, int) or days <= 0:
+            raise StorageError("days must be a positive integer")
+        if days > MAX_DAYS:
+            raise StorageError(f"days cannot exceed {MAX_DAYS}")
+
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
 
-                # Get run_ids to delete
+                # Count records to be deleted first
                 cursor.execute(
                     """
-                    SELECT run_id FROM analysis_runs
+                    SELECT COUNT(*) as count FROM analysis_runs
                     WHERE timestamp < datetime('now', ?)
                     """,
                     (f"-{days} days",)
                 )
-                run_ids = [row["run_id"] for row in cursor.fetchall()]
+                count = cursor.fetchone()["count"]
 
-                if not run_ids:
+                if count == 0:
                     return 0
 
-                # Delete metric values first (foreign key)
-                placeholders = ",".join("?" * len(run_ids))
+                # Delete metric values first (using subquery to avoid dynamic SQL)
                 cursor.execute(
-                    f"DELETE FROM metric_values WHERE run_id IN ({placeholders})",
-                    run_ids
+                    """
+                    DELETE FROM metric_values
+                    WHERE run_id IN (
+                        SELECT run_id FROM analysis_runs
+                        WHERE timestamp < datetime('now', ?)
+                    )
+                    """,
+                    (f"-{days} days",)
                 )
 
                 # Delete analysis runs
                 cursor.execute(
-                    f"DELETE FROM analysis_runs WHERE run_id IN ({placeholders})",
-                    run_ids
+                    """
+                    DELETE FROM analysis_runs
+                    WHERE timestamp < datetime('now', ?)
+                    """,
+                    (f"-{days} days",)
                 )
 
-                return len(run_ids)
+                return count
 
         except sqlite3.Error as e:
             raise StorageError(f"Failed to delete old records: {e}")
