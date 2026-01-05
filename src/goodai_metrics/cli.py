@@ -322,15 +322,40 @@ def analyze(
 
         # Store results if enabled
         should_store = store if store is not None else config.store_results
+        regressions = []
         if should_store:
             try:
                 storage_path = Path(config.storage_path) if config.storage_path else None
                 storage = MetricsStorage(db_path=storage_path)
+
+                # Detect regressions BEFORE storing (compare with previous)
+                regressions = storage.detect_regressions(
+                    full_results,
+                    project=config.project_name,
+                    threshold_percent=10.0,
+                )
+
+                # Store the analysis
                 run_id = storage.store_analysis(
                     full_results,
                     project=config.project_name
                 )
                 click.echo(f"Results stored (run_id: {run_id})", err=True)
+
+                # Report regressions if found
+                if regressions:
+                    click.echo("", err=True)
+                    click.echo(f"WARNING: {len(regressions)} regression(s) detected!", err=True)
+                    for reg in regressions[:5]:  # Limit output
+                        click.echo(
+                            f"  - {reg['metric']}: gap increased from "
+                            f"{reg['previous_gap_percent']:.1f}% to {reg['current_gap_percent']:.1f}% "
+                            f"(+{reg['gap_increase']:.1f}%)",
+                            err=True
+                        )
+                    if len(regressions) > 5:
+                        click.echo(f"  ... and {len(regressions) - 5} more", err=True)
+
             except StorageError as e:
                 click.echo(f"Warning: Failed to store results: {e}", err=True)
 
