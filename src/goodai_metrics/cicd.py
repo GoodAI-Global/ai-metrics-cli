@@ -9,7 +9,6 @@ Provides output formats and integrations for CI/CD pipelines:
 """
 
 import re
-import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
@@ -32,9 +31,6 @@ EXIT_CONFIG_ERROR = 3
 MAX_FILES_PER_BATCH = 50
 MAX_FILE_PATH_LENGTH = 500
 MAX_MESSAGE_LENGTH = 1000
-
-# Regex patterns
-SAFE_NAME_PATTERN = re.compile(r'^[\w][\w\-._]{0,99}$')
 
 
 def _sanitize_text(text: str, max_length: int = 500) -> str:
@@ -190,7 +186,6 @@ def generate_junit_xml(
 
 def generate_github_annotations(
     health_results: List[Dict[str, Any]],
-    workflow_file: Optional[str] = None,
 ) -> str:
     """
     Generate GitHub Actions workflow annotations.
@@ -200,7 +195,6 @@ def generate_github_annotations(
 
     Args:
         health_results: List of health check result dicts.
-        workflow_file: Optional workflow file path for annotations.
 
     Returns:
         String with GitHub Actions annotation commands.
@@ -208,7 +202,7 @@ def generate_github_annotations(
     lines = []
 
     for result in health_results[:MAX_FILES_PER_BATCH]:
-        file_path = result.get("file", "")
+        file_path = _sanitize_text(result.get("file", ""), 200)
         passed = result.get("passed", False)
 
         if result.get("error"):
@@ -225,8 +219,8 @@ def generate_github_annotations(
 
             for failure in failures[:5]:  # Limit per file
                 check = _sanitize_text(failure.get("check", ""), 100)
-                expected = str(failure.get("expected", ""))
-                actual = str(failure.get("actual", ""))
+                expected = _sanitize_text(str(failure.get("expected", "")), 50)
+                actual = _sanitize_text(str(failure.get("actual", "")), 50)
 
                 msg = f"{check}: expected {expected}, got {actual}"
 
@@ -250,7 +244,7 @@ def generate_github_annotations(
 
 def generate_gitlab_ci_report(
     health_results: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+) -> List[Dict[str, Any]]:
     """
     Generate GitLab CI Code Quality report format.
 
@@ -261,7 +255,7 @@ def generate_gitlab_ci_report(
         health_results: List of health check result dicts.
 
     Returns:
-        Code Quality report as dict (can be serialized to JSON).
+        Code Quality report as list of issue dicts (can be serialized to JSON).
     """
     issues = []
 
