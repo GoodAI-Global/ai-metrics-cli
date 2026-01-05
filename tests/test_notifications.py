@@ -405,3 +405,93 @@ class TestSecurityLimits:
         call_args = mock_send.call_args
         # The data should be limited to 20 regressions
         assert len(call_args[1]["data"]["regressions"]) <= 20
+
+    @patch('goodai_metrics.notifications.send_webhook_notification')
+    def test_sanitizes_metric_name_in_threshold_breach(self, mock_send):
+        """Metric name is sanitized in threshold breach."""
+        mock_send.return_value = {"status_code": 200, "success": True}
+
+        notify_threshold_breach(
+            webhook_url="https://example.com/webhook",
+            metric_name="metric\x00with\x01control\x02chars",
+            current_value=0.65,
+            threshold_value=0.80,
+            breach_type="below_min",
+            is_slack=False
+        )
+
+        call_args = mock_send.call_args
+        assert "\x00" not in call_args[1]["data"]["metric_name"]
+        assert "\x01" not in call_args[1]["data"]["metric_name"]
+
+    @patch('goodai_metrics.notifications.send_webhook_notification')
+    def test_sanitizes_breach_type(self, mock_send):
+        """Breach type is sanitized."""
+        mock_send.return_value = {"status_code": 200, "success": True}
+
+        notify_threshold_breach(
+            webhook_url="https://example.com/webhook",
+            metric_name="accuracy",
+            current_value=0.65,
+            threshold_value=0.80,
+            breach_type="below\x00min",
+            is_slack=False
+        )
+
+        call_args = mock_send.call_args
+        assert "\x00" not in call_args[1]["data"]["breach_type"]
+
+    @patch('goodai_metrics.notifications.send_webhook_notification')
+    def test_sanitizes_regression_metric_names(self, mock_send):
+        """Regression metric names are sanitized."""
+        mock_send.return_value = {"status_code": 200, "success": True}
+
+        regressions = [
+            {
+                "metric": "metric\x00name",
+                "previous_value": 0.90,
+                "current_value": 0.80,
+                "change_percent": -11.1
+            }
+        ]
+
+        notify_regression_detected(
+            webhook_url="https://example.com/webhook",
+            regressions=regressions,
+            is_slack=False
+        )
+
+        call_args = mock_send.call_args
+        assert "\x00" not in call_args[1]["data"]["regressions"][0]["metric"]
+
+    @patch('goodai_metrics.notifications._send_http_request')
+    def test_invalid_slack_color_defaults_to_gray(self, mock_send):
+        """Invalid Slack color defaults to gray."""
+        mock_send.return_value = {"status_code": 200, "success": True}
+
+        send_slack_notification(
+            webhook_url="https://hooks.slack.com/services/xxx",
+            title="Test",
+            message="Test",
+            color="invalid_color"
+        )
+
+        call_args = mock_send.call_args
+        payload = call_args[0][1]
+        assert payload["attachments"][0]["color"] == "#808080"
+
+    @patch('goodai_metrics.notifications._send_http_request')
+    def test_valid_hex_color_accepted(self, mock_send):
+        """Valid hex color is accepted."""
+        mock_send.return_value = {"status_code": 200, "success": True}
+
+        send_slack_notification(
+            webhook_url="https://hooks.slack.com/services/xxx",
+            title="Test",
+            message="Test",
+            color="#FF5733"
+        )
+
+        call_args = mock_send.call_args
+        payload = call_args[0][1]
+        assert payload["attachments"][0]["color"] == "#FF5733"

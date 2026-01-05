@@ -215,6 +215,10 @@ def send_webhook_notification(
     return _send_http_request(webhook_url, payload)
 
 
+# Valid Slack colors
+VALID_SLACK_COLORS = {"good", "warning", "danger"}
+
+
 def send_slack_notification(
     webhook_url: str,
     title: str,
@@ -240,6 +244,12 @@ def send_slack_notification(
     Raises:
         NotificationError: If notification fails.
     """
+    # Validate/sanitize color
+    if color not in VALID_SLACK_COLORS:
+        # Check if it's a valid hex color
+        if not re.match(r'^#[0-9A-Fa-f]{6}$', color):
+            color = "#808080"  # Default to gray
+
     # Build Slack message format
     attachment = {
         "fallback": _sanitize_text(f"{title}: {message}", 500),
@@ -293,7 +303,7 @@ def notify_analysis_complete(
     """
     high_priority = sum(1 for r in recommendations if r.get("priority") == "HIGH")
     metrics_analyzed = analysis_results.get("metrics_analyzed", 0)
-    industry = analysis_results.get("industry", "unknown")
+    industry = _sanitize_text(str(analysis_results.get("industry", "unknown")), 100)
 
     if is_slack:
         color = {
@@ -305,7 +315,7 @@ def notify_analysis_complete(
         fields = [
             {"title": "Industry", "value": industry, "short": True},
             {"title": "Metrics Analyzed", "value": str(metrics_analyzed), "short": True},
-            {"title": "Health Status", "value": overall_health, "short": True},
+            {"title": "Health Status", "value": _sanitize_text(overall_health, 50), "short": True},
             {"title": "High Priority", "value": str(high_priority), "short": True},
         ]
 
@@ -358,28 +368,32 @@ def notify_threshold_breach(
     Returns:
         Response info dict.
     """
+    # Sanitize inputs
+    safe_metric_name = _sanitize_text(metric_name, 100)
+    safe_breach_type = _sanitize_text(breach_type, 50)
+
     if is_slack:
         fields = [
-            {"title": "Metric", "value": metric_name, "short": True},
+            {"title": "Metric", "value": safe_metric_name, "short": True},
             {"title": "Current Value", "value": f"{current_value:.4f}", "short": True},
             {"title": "Threshold", "value": f"{threshold_value:.4f}", "short": True},
-            {"title": "Breach Type", "value": breach_type, "short": True},
+            {"title": "Breach Type", "value": safe_breach_type, "short": True},
         ]
 
         return send_slack_notification(
             webhook_url=webhook_url,
             title="Threshold Breach Detected",
-            message=f"Metric '{metric_name}' has breached its threshold",
+            message=f"Metric '{safe_metric_name}' has breached its threshold",
             color="danger",
             fields=fields,
             project=project,
         )
     else:
         data = {
-            "metric_name": metric_name,
+            "metric_name": safe_metric_name,
             "current_value": current_value,
             "threshold_value": threshold_value,
-            "breach_type": breach_type,
+            "breach_type": safe_breach_type,
         }
 
         return send_webhook_notification(
@@ -410,7 +424,7 @@ def notify_regression_detected(
     """
     if is_slack:
         regression_text = "\n".join([
-            f"- {r.get('metric', 'unknown')}: {r.get('previous_value', 0):.3f} -> {r.get('current_value', 0):.3f} ({r.get('change_percent', 0):+.1f}%)"
+            f"- {_sanitize_text(str(r.get('metric', 'unknown')), 50)}: {r.get('previous_value', 0):.3f} -> {r.get('current_value', 0):.3f} ({r.get('change_percent', 0):+.1f}%)"
             for r in regressions[:5]  # Limit to 5
         ])
 
@@ -429,7 +443,7 @@ def notify_regression_detected(
             "regression_count": len(regressions),
             "regressions": [
                 {
-                    "metric": r.get("metric", "unknown"),
+                    "metric": _sanitize_text(str(r.get("metric", "unknown")), 100),
                     "previous_value": r.get("previous_value"),
                     "current_value": r.get("current_value"),
                     "change_percent": r.get("change_percent"),
