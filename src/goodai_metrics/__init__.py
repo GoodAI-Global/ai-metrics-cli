@@ -44,6 +44,15 @@ from .formatters import (
     format_comparison_json,
     format_comparison_text,
 )
+from .config import (
+    load_config,
+    find_config_file,
+    ProjectConfig,
+    ThresholdsConfig,
+    NotificationsConfig,
+    CustomTarget,
+    ConfigError,
+)
 
 __all__ = [
     # Package metadata
@@ -76,4 +85,12 @@ __all__ = [
     "format_health_check",
     "format_comparison_json",
     "format_comparison_text",
+    # Config
+    "load_config",
+    "find_config_file",
+    "ProjectConfig",
+    "ThresholdsConfig",
+    "NotificationsConfig",
+    "CustomTarget",
+    "ConfigError",
 ]

@@ -1,0 +1,36 @@
+# Good AI Metrics Configuration
+# https://github.com/goodai/goodai-metrics
+
+version: "1.0"
+
+# Project name (optional)
+project: my-ai-project
+
+# Default settings
+defaults:
+  industry: general
+  format: json
+
+# Custom targets (override industry benchmarks)
+# custom_targets:
+#   accuracy:
+#     target: 0.95
+#     minimum: 0.90
+#   latency_ms:
+#     target: 150
+#     maximum: 300
+
+# CI/CD thresholds
+thresholds:
+  fail_on_priority: HIGH
+  max_gap_percent: 30.0
+  max_high_priority: 0
+
+# Notifications (coming soon)
+# notifications:
+#   on_regression: true
+#   webhook_url: ${NOTIFICATION_WEBHOOK}
+
+# Storage settings (coming soon)
+# store_results: true
+# storage_path: .goodai-metrics/history.db
