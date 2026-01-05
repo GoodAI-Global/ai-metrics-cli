@@ -134,6 +134,30 @@ def _load_project_config() -> ProjectConfig:
         return ProjectConfig()
 
 
+def _create_analyzer(industry: str, config: ProjectConfig) -> MetricsAnalyzer:
+    """
+    Create a MetricsAnalyzer with custom benchmarks from config.
+
+    Args:
+        industry: Industry name for benchmark comparison.
+        config: Project configuration with optional custom benchmarks.
+
+    Returns:
+        Configured MetricsAnalyzer instance.
+    """
+    # Get custom benchmarks from config
+    custom_benchmarks = config.get_merged_benchmarks() if config.custom_benchmarks else None
+
+    # Get additional benchmark files
+    benchmark_files = [Path(f) for f in config.benchmark_files] if config.benchmark_files else None
+
+    return MetricsAnalyzer(
+        industry=industry,
+        custom_benchmarks=custom_benchmarks,
+        benchmark_files=benchmark_files,
+    )
+
+
 @click.group()
 @click.version_option(version=__version__, prog_name="goodai-metrics")
 @click.option(
@@ -268,16 +292,14 @@ def analyze(
     logger.event("analysis_started", f"Analyzing {filepath.name} for {industry}")
 
     try:
-        # Load benchmarks
-        with timed(logger, "load_benchmarks"):
-            benchmarks = load_benchmarks()
-            industry_benchmarks = get_benchmark_for_industry(industry, benchmarks)
-
-        # Analyze metrics
+        # Create analyzer with custom benchmarks from config
         with timed(logger, "analyze_metrics"):
-            analyzer = MetricsAnalyzer(industry=industry)
+            analyzer = _create_analyzer(industry, config)
             metrics = analyzer.load_csv(filepath)
             analysis_results = analyzer.analyze(metrics)
+
+        # Get industry benchmarks (includes any custom overrides)
+        industry_benchmarks = analyzer.industry_benchmarks
 
         # Generate recommendations
         with timed(logger, "generate_recommendations"):
@@ -376,14 +398,13 @@ def health(
         max_gap = config.thresholds.max_gap_percent
 
     try:
-        # Load benchmarks
-        benchmarks = load_benchmarks()
-        industry_benchmarks = get_benchmark_for_industry(industry, benchmarks)
-
-        # Analyze metrics
-        analyzer = MetricsAnalyzer(industry=industry)
+        # Create analyzer with custom benchmarks from config
+        analyzer = _create_analyzer(industry, config)
         metrics = analyzer.load_csv(filepath)
         analysis_results = analyzer.analyze(metrics)
+
+        # Get industry benchmarks (includes any custom overrides)
+        industry_benchmarks = analyzer.industry_benchmarks
 
         # Generate recommendations
         recommendations = generate_all_recommendations(analysis_results, industry_benchmarks)
@@ -454,10 +475,16 @@ def compare(
         output_format = config.default_format
 
     try:
+        # Get custom benchmarks from config
+        custom_benchmarks = config.get_merged_benchmarks() if config.custom_benchmarks else None
+        benchmark_files = [Path(f) for f in config.benchmark_files] if config.benchmark_files else None
+
         comparison_results = compare_metrics(
             Path(before_file),
             Path(after_file),
-            industry=industry
+            industry=industry,
+            custom_benchmarks=custom_benchmarks,
+            benchmark_files=benchmark_files,
         )
 
         if output_format == "json":
@@ -560,15 +587,13 @@ def report(
     logger.event("report_generation_started", f"Generating PDF report for {filepath.name}")
 
     try:
-        # Load benchmarks and analyze
-        benchmarks = load_benchmarks()
-        industry_benchmarks = get_benchmark_for_industry(industry, benchmarks)
-
-        analyzer = MetricsAnalyzer(industry=industry)
+        # Create analyzer with custom benchmarks from config
+        analyzer = _create_analyzer(industry, config)
         metrics = analyzer.load_csv(filepath)
         analysis_results = analyzer.analyze(metrics)
 
-        # Generate recommendations
+        # Get industry benchmarks and generate recommendations
+        industry_benchmarks = analyzer.industry_benchmarks
         recommendations = generate_all_recommendations(analysis_results, industry_benchmarks)
         overall_health = determine_overall_health(recommendations)
 
@@ -1358,13 +1383,13 @@ def ci_check(
 
     # Define the check function
     def run_health_check(filepath: Path) -> Dict[str, Any]:
-        benchmarks = load_benchmarks()
-        industry_benchmarks = get_benchmark_for_industry(industry, benchmarks)
-
-        analyzer = MetricsAnalyzer(industry=industry)
+        # Create analyzer with custom benchmarks from config
+        analyzer = _create_analyzer(industry, config)
         metrics = analyzer.load_csv(filepath)
         analysis_results = analyzer.analyze(metrics)
 
+        # Get industry benchmarks (includes any custom overrides)
+        industry_benchmarks = analyzer.industry_benchmarks
         recommendations = generate_all_recommendations(analysis_results, industry_benchmarks)
 
         health_result = check_health_thresholds(

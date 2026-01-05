@@ -178,3 +178,99 @@ class TestCompareMetrics:
         finally:
             before_path.unlink()
             after_path.unlink()
+
+
+class TestCustomBenchmarks:
+    """Tests for custom benchmarks integration."""
+
+    def test_analyzer_uses_custom_benchmarks(self):
+        """Analyzer merges custom benchmarks with base."""
+        custom_benchmarks = {
+            "custom_industry": {
+                "accuracy": {"p25": 0.80, "p50": 0.85, "p75": 0.90, "p90": 0.95}
+            }
+        }
+
+        analyzer = MetricsAnalyzer(
+            industry="custom_industry",
+            custom_benchmarks=custom_benchmarks,
+        )
+
+        # Check that custom industry is available
+        assert "custom_industry" in analyzer.benchmarks
+        assert "accuracy" in analyzer.industry_benchmarks
+        assert analyzer.industry_benchmarks["accuracy"]["p50"] == 0.85
+
+    def test_custom_benchmarks_override_base(self):
+        """Custom benchmarks override base benchmarks for same metric."""
+        custom_benchmarks = {
+            "manufacturing": {
+                "accuracy": {"p25": 0.99, "p50": 0.995, "p75": 0.998, "p90": 0.999}
+            }
+        }
+
+        analyzer = MetricsAnalyzer(
+            industry="manufacturing",
+            custom_benchmarks=custom_benchmarks,
+        )
+
+        # Custom benchmark should override base
+        assert analyzer.industry_benchmarks["accuracy"]["p50"] == 0.995
+
+    def test_analyze_with_custom_benchmarks(self):
+        """Analysis uses custom benchmarks for comparison."""
+        rows = [
+            {"metric": "custom_metric", "value": "0.75", "timestamp": "2025-01-01"},
+        ]
+        filepath = create_temp_csv(rows)
+
+        custom_benchmarks = {
+            "test_industry": {
+                "custom_metric": {"p25": 0.70, "p50": 0.80, "p75": 0.90, "p90": 0.95}
+            }
+        }
+
+        try:
+            analyzer = MetricsAnalyzer(
+                industry="test_industry",
+                custom_benchmarks=custom_benchmarks,
+            )
+            metrics = analyzer.load_csv(filepath)
+            results = analyzer.analyze(metrics)
+
+            # Should have analyzed the custom metric
+            assert results["metrics_analyzed"] == 1
+            assert results["metrics_with_benchmarks"] == 1
+
+            # Check analysis used custom benchmark
+            # analysis is a list, find the metric
+            analysis = next(a for a in results["analysis"] if a["metric"] == "custom_metric")
+            assert analysis["benchmark_p50"] == 0.80
+        finally:
+            filepath.unlink()
+
+    def test_compare_metrics_with_custom_benchmarks(self):
+        """Compare metrics uses custom benchmarks."""
+        before_rows = [{"metric": "test", "value": "0.70"}]
+        after_rows = [{"metric": "test", "value": "0.85"}]
+
+        before_path = create_temp_csv(before_rows, headers=["metric", "value"])
+        after_path = create_temp_csv(after_rows, headers=["metric", "value"])
+
+        custom_benchmarks = {
+            "general": {"test": {"p25": 0.60, "p50": 0.75, "p75": 0.85, "p90": 0.95}}
+        }
+
+        try:
+            results = compare_metrics(
+                before_path,
+                after_path,
+                industry="general",
+                custom_benchmarks=custom_benchmarks,
+            )
+
+            assert results["metrics_compared"] == 1
+            assert results["summary"]["improved"] == 1
+        finally:
+            before_path.unlink()
+            after_path.unlink()

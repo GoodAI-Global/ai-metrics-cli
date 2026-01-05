@@ -9,7 +9,13 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
-from .benchmarks import load_benchmarks, get_benchmark_for_industry, get_percentile_rank, BenchmarkError
+from .benchmarks import (
+    load_benchmarks,
+    load_benchmarks_with_custom,
+    get_benchmark_for_industry,
+    get_percentile_rank,
+    BenchmarkError,
+)
 
 # Import consolidated utility functions (single source of truth)
 # Note: Imported here to avoid duplication; recommendations.py is the authoritative source
@@ -39,22 +45,40 @@ class MetricsAnalyzer:
 
     REQUIRED_COLUMNS = {"metric", "value"}
 
-    def __init__(self, industry: str = "general"):
+    def __init__(
+        self,
+        industry: str = "general",
+        custom_benchmarks: Optional[Dict[str, Dict[str, Any]]] = None,
+        benchmark_files: Optional[List[Path]] = None,
+    ):
         """
         Initialize analyzer for a specific industry.
 
         Args:
             industry: Industry name for benchmark comparison.
+            custom_benchmarks: Optional custom benchmark overrides (from config).
+            benchmark_files: Optional list of additional benchmark files to load.
         """
         self.industry = industry
+        self._custom_benchmarks = custom_benchmarks
+        self._benchmark_files = benchmark_files
         self._benchmarks = None
         self._industry_benchmarks = None
 
     @property
     def benchmarks(self) -> Dict:
-        """Lazy-load benchmarks."""
+        """Lazy-load benchmarks, including any custom sources."""
         if self._benchmarks is None:
-            self._benchmarks = load_benchmarks()
+            if self._custom_benchmarks or self._benchmark_files:
+                # Load with custom sources merged in
+                self._benchmarks = load_benchmarks_with_custom(
+                    base_filepath=None,
+                    additional_files=self._benchmark_files,
+                    custom_benchmarks=self._custom_benchmarks,
+                )
+            else:
+                # Load base benchmarks only
+                self._benchmarks = load_benchmarks()
         return self._benchmarks
 
     @property
@@ -217,7 +241,9 @@ class MetricsAnalyzer:
 
 def analyze_metrics(
     filepath: Path,
-    industry: str = "general"
+    industry: str = "general",
+    custom_benchmarks: Optional[Dict[str, Dict[str, Any]]] = None,
+    benchmark_files: Optional[List[Path]] = None,
 ) -> Dict[str, Any]:
     """
     Convenience function to analyze metrics from a CSV file.
@@ -225,11 +251,17 @@ def analyze_metrics(
     Args:
         filepath: Path to CSV file.
         industry: Industry for benchmark comparison.
+        custom_benchmarks: Optional custom benchmark overrides.
+        benchmark_files: Optional additional benchmark files.
 
     Returns:
         Analysis results dictionary.
     """
-    analyzer = MetricsAnalyzer(industry=industry)
+    analyzer = MetricsAnalyzer(
+        industry=industry,
+        custom_benchmarks=custom_benchmarks,
+        benchmark_files=benchmark_files,
+    )
     metrics = analyzer.load_csv(filepath)
     return analyzer.analyze(metrics)
 
@@ -237,7 +269,9 @@ def analyze_metrics(
 def compare_metrics(
     before_file: Path,
     after_file: Path,
-    industry: str = "general"
+    industry: str = "general",
+    custom_benchmarks: Optional[Dict[str, Dict[str, Any]]] = None,
+    benchmark_files: Optional[List[Path]] = None,
 ) -> Dict[str, Any]:
     """
     Compare metrics between two time periods.
@@ -246,11 +280,17 @@ def compare_metrics(
         before_file: Path to CSV with earlier metrics.
         after_file: Path to CSV with later metrics.
         industry: Industry for context.
+        custom_benchmarks: Optional custom benchmark overrides.
+        benchmark_files: Optional additional benchmark files.
 
     Returns:
         Comparison results dictionary.
     """
-    analyzer = MetricsAnalyzer(industry=industry)
+    analyzer = MetricsAnalyzer(
+        industry=industry,
+        custom_benchmarks=custom_benchmarks,
+        benchmark_files=benchmark_files,
+    )
 
     before_metrics = analyzer.load_csv(before_file)
     after_metrics = analyzer.load_csv(after_file)
