@@ -59,6 +59,16 @@ from .storage import (
     MetricHistory,
     StorageError,
 )
+from .logging_config import (
+    setup_logging,
+    get_logger,
+    set_context_id,
+    clear_context_id,
+    timed,
+    JSONFormatter,
+    HumanFormatter,
+    ContextLogger,
+)
 
 __all__ = [
     # Package metadata
@@ -104,4 +114,13 @@ __all__ = [
     "AnalysisRecord",
     "MetricHistory",
     "StorageError",
+    # Logging
+    "setup_logging",
+    "get_logger",
+    "set_context_id",
+    "clear_context_id",
+    "timed",
+    "JSONFormatter",
+    "HumanFormatter",
+    "ContextLogger",
 ]

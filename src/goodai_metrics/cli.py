@@ -27,6 +27,7 @@ from .config import (
     ConfigError,
 )
 from .storage import MetricsStorage, StorageError
+from .logging_config import setup_logging, get_logger, set_context_id, timed
 from .recommendations import (
     generate_all_recommendations,
     determine_overall_health,
@@ -129,14 +130,46 @@ def _load_project_config() -> ProjectConfig:
     type=click.Path(exists=True),
     help="Path to config file (default: auto-discover)"
 )
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    help="Enable verbose output (debug logging)"
+)
+@click.option(
+    "--json-logs",
+    is_flag=True,
+    help="Output logs in JSON format"
+)
+@click.option(
+    "--log-file",
+    type=click.Path(),
+    help="Write logs to file"
+)
 @click.pass_context
-def main(ctx: click.Context, config_path: Optional[str]):
+def main(
+    ctx: click.Context,
+    config_path: Optional[str],
+    verbose: bool,
+    json_logs: bool,
+    log_file: Optional[str]
+):
     """
     Good AI Metrics CLI - Enterprise AI Implementation Analytics.
 
     Evidence over opinions. Leverage, not lore.
     """
     ctx.ensure_object(dict)
+
+    # Set up logging (WARNING by default, DEBUG if verbose)
+    log_level = "DEBUG" if verbose else "WARNING"
+    setup_logging(level=log_level, json_output=json_logs, log_file=log_file)
+
+    # Set context ID for this CLI invocation
+    context_id = set_context_id()
+    ctx.obj["context_id"] = context_id
+
+    logger = get_logger(__name__)
+    logger.debug(f"CLI invoked with context_id={context_id}")
 
     # Load config and store in context
     try:
@@ -196,16 +229,19 @@ def analyze(
         goodai-metrics analyze data.csv -f text
     """
     config: ProjectConfig = ctx.obj.get("config", ProjectConfig())
+    logger = get_logger(__name__)
 
     # Determine file path
     if sample:
         filepath = get_sample_data_path(sample)
         if industry is None:
             industry = sample
+        logger.debug(f"Using sample data for industry: {sample}")
     elif file:
         filepath = Path(file).resolve()
         if not filepath.exists():
             raise click.ClickException(f"File not found: {filepath}")
+        logger.debug(f"Analyzing file: {filepath}")
     else:
         raise click.ClickException(
             "Please provide a CSV file path or use --sample <industry>"
@@ -217,19 +253,27 @@ def analyze(
     if output_format is None:
         output_format = config.default_format
 
+    logger.event("analysis_started", f"Analyzing {filepath.name} for {industry}")
+
     try:
         # Load benchmarks
-        benchmarks = load_benchmarks()
-        industry_benchmarks = get_benchmark_for_industry(industry, benchmarks)
+        with timed(logger, "load_benchmarks"):
+            benchmarks = load_benchmarks()
+            industry_benchmarks = get_benchmark_for_industry(industry, benchmarks)
 
         # Analyze metrics
-        analyzer = MetricsAnalyzer(industry=industry)
-        metrics = analyzer.load_csv(filepath)
-        analysis_results = analyzer.analyze(metrics)
+        with timed(logger, "analyze_metrics"):
+            analyzer = MetricsAnalyzer(industry=industry)
+            metrics = analyzer.load_csv(filepath)
+            analysis_results = analyzer.analyze(metrics)
 
         # Generate recommendations
-        recommendations = generate_all_recommendations(analysis_results, industry_benchmarks)
-        overall_health = determine_overall_health(recommendations)
+        with timed(logger, "generate_recommendations"):
+            recommendations = generate_all_recommendations(analysis_results, industry_benchmarks)
+            overall_health = determine_overall_health(recommendations)
+
+        logger.metric("metrics_analyzed", analysis_results.get("metrics_analyzed", 0))
+        logger.metric("high_priority_count", sum(1 for r in recommendations if r.get("priority") == "HIGH"))
 
         # Build full results
         full_results = {
@@ -259,10 +303,13 @@ def analyze(
             output = format_report_text(analysis_results, recommendations, overall_health)
 
         click.echo(output)
+        logger.event("analysis_completed", f"Health: {overall_health}", industry=industry)
 
     except BenchmarkError as e:
+        logger.error(f"Benchmark error: {e}")
         raise click.ClickException(f"Benchmark error: {e}")
     except AnalysisError as e:
+        logger.error(f"Analysis error: {e}")
         raise click.ClickException(f"Analysis error: {e}")
 
 
