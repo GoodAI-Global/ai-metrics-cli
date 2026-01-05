@@ -40,6 +40,18 @@ from .formatters import (
     format_comparison_json,
     format_comparison_text
 )
+from .cicd import (
+    generate_junit_xml,
+    generate_github_annotations,
+    generate_gitlab_ci_report,
+    get_exit_code,
+    format_summary_table,
+    batch_check_files,
+    CICDError,
+    EXIT_SUCCESS,
+    EXIT_THRESHOLD_FAILURE,
+    EXIT_ANALYSIS_ERROR,
+)
 
 
 # Sample data mapping
@@ -1242,6 +1254,219 @@ def serve(
         workers=workers if not reload else 1,
         log_level="info",
     )
+
+
+# ============================================================================
+# CI/CD Commands
+# ============================================================================
+
+@main.group()
+def ci():
+    """
+    CI/CD integration commands.
+
+    Commands for integrating with CI/CD pipelines:
+    - Generate JUnit XML reports
+    - GitHub Actions annotations
+    - GitLab CI Code Quality reports
+    - Batch file processing
+    """
+    pass
+
+
+@ci.command("check")
+@click.argument("files", nargs=-1, type=click.Path(exists=True))
+@click.option(
+    "--industry", "-i",
+    default=None,
+    help="Industry for benchmark comparison"
+)
+@click.option(
+    "--format", "-f", "output_format",
+    type=click.Choice(["summary", "junit", "github", "gitlab", "json"]),
+    default="summary",
+    help="Output format (default: summary)"
+)
+@click.option(
+    "--output", "-o",
+    type=click.Path(),
+    default=None,
+    help="Output file (default: stdout)"
+)
+@click.option(
+    "--max-high-priority",
+    default=None,
+    type=int,
+    help="Maximum allowed HIGH priority items"
+)
+@click.option(
+    "--max-gap",
+    default=None,
+    type=float,
+    help="Maximum allowed gap percentage"
+)
+@click.option(
+    "--notify-on-failure",
+    is_flag=True,
+    default=False,
+    help="Send webhook notification on failure"
+)
+@click.pass_context
+def ci_check(
+    ctx: click.Context,
+    files: tuple,
+    industry: Optional[str],
+    output_format: str,
+    output: Optional[str],
+    max_high_priority: Optional[int],
+    max_gap: Optional[float],
+    notify_on_failure: bool,
+):
+    """
+    Run health checks for CI/CD pipelines.
+
+    Supports multiple output formats for different CI systems.
+    Returns appropriate exit codes for pipeline control.
+
+    Exit codes:
+        0: All checks passed
+        1: Threshold failures
+        2: Analysis errors
+
+    Examples:
+
+        goodai-metrics ci check metrics.csv
+
+        goodai-metrics ci check *.csv --format junit --output results.xml
+
+        goodai-metrics ci check data.csv --format github
+
+        goodai-metrics ci check metrics.csv --notify-on-failure
+    """
+    if not files:
+        raise click.ClickException("At least one file is required")
+
+    config: ProjectConfig = ctx.obj.get("config", ProjectConfig())
+
+    # Apply config defaults
+    if industry is None:
+        industry = config.default_industry
+    if max_high_priority is None:
+        max_high_priority = config.thresholds.max_high_priority
+    if max_gap is None:
+        max_gap = config.thresholds.max_gap_percent
+
+    # Define the check function
+    def run_health_check(filepath: Path) -> Dict[str, Any]:
+        benchmarks = load_benchmarks()
+        industry_benchmarks = get_benchmark_for_industry(industry, benchmarks)
+
+        analyzer = MetricsAnalyzer(industry=industry)
+        metrics = analyzer.load_csv(filepath)
+        analysis_results = analyzer.analyze(metrics)
+
+        recommendations = generate_all_recommendations(analysis_results, industry_benchmarks)
+
+        health_result = check_health_thresholds(
+            recommendations,
+            max_high_priority=max_high_priority,
+            max_gap_percent=max_gap
+        )
+
+        return health_result
+
+    try:
+        # Run batch checks
+        file_paths = [Path(f) for f in files]
+        results, exit_code = batch_check_files(file_paths, run_health_check)
+
+        # Generate output
+        if output_format == "junit":
+            output_text = generate_junit_xml(results)
+        elif output_format == "github":
+            output_text = generate_github_annotations(results)
+        elif output_format == "gitlab":
+            import json as json_module
+            output_text = json_module.dumps(generate_gitlab_ci_report(results), indent=2)
+        elif output_format == "json":
+            import json as json_module
+            output_text = json_module.dumps(results, indent=2)
+        else:  # summary
+            output_text = format_summary_table(results)
+
+        # Write output
+        if output:
+            output_path = Path(output)
+            output_path.write_text(output_text)
+            click.echo(f"Results written to: {output}", err=True)
+        else:
+            click.echo(output_text)
+
+        # Send notification on failure if requested
+        if notify_on_failure and exit_code != EXIT_SUCCESS:
+            _send_failure_notification(ctx, results, exit_code)
+
+        sys.exit(exit_code)
+
+    except CICDError as e:
+        raise click.ClickException(f"CI/CD error: {e}")
+    except BenchmarkError as e:
+        raise click.ClickException(f"Benchmark error: {e}")
+    except AnalysisError as e:
+        raise click.ClickException(f"Analysis error: {e}")
+
+
+def _send_failure_notification(
+    ctx: click.Context,
+    results: list,
+    exit_code: int,
+) -> None:
+    """Send webhook notification on CI/CD failure."""
+    config: ProjectConfig = ctx.obj.get("config", ProjectConfig())
+
+    # Check for configured webhook
+    webhook_url = None
+    if hasattr(config, 'notifications') and config.notifications:
+        webhook_url = config.notifications.webhook_url
+
+    if not webhook_url:
+        click.echo("Warning: No webhook configured for notifications", err=True)
+        return
+
+    try:
+        from .notifications import send_webhook_notification, is_slack_webhook, send_slack_notification
+
+        failed_files = [r.get("file", "unknown") for r in results if not r.get("passed", False)]
+        total = len(results)
+        failed_count = len(failed_files)
+
+        data = {
+            "total_checks": total,
+            "failed_checks": failed_count,
+            "exit_code": exit_code,
+            "failed_files": failed_files[:10],  # Limit
+        }
+
+        if is_slack_webhook(webhook_url):
+            send_slack_notification(
+                webhook_url=webhook_url,
+                title="CI/CD Health Check Failed",
+                message=f"{failed_count}/{total} metrics files failed health checks",
+                color="danger",
+                project=config.project_name,
+            )
+        else:
+            send_webhook_notification(
+                webhook_url=webhook_url,
+                event_type="cicd_failure",
+                data=data,
+                project=config.project_name,
+            )
+
+        click.echo("Failure notification sent", err=True)
+
+    except Exception as e:
+        click.echo(f"Warning: Failed to send notification: {e}", err=True)
 
 
 if __name__ == "__main__":

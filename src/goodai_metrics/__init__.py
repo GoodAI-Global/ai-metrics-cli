@@ -110,6 +110,21 @@ from .notifications import (
     NotificationError,
 )
 
+# CI/CD Integration
+from .cicd import (
+    generate_junit_xml,
+    generate_github_annotations,
+    generate_gitlab_ci_report,
+    get_exit_code,
+    format_summary_table,
+    batch_check_files,
+    CICDError,
+    EXIT_SUCCESS,
+    EXIT_THRESHOLD_FAILURE,
+    EXIT_ANALYSIS_ERROR,
+    EXIT_CONFIG_ERROR,
+)
+
 __all__ = [
     # Package metadata
     "__version__",
@@ -184,4 +199,16 @@ __all__ = [
     "notify_regression_detected",
     "is_slack_webhook",
     "NotificationError",
+    # CI/CD Integration
+    "generate_junit_xml",
+    "generate_github_annotations",
+    "generate_gitlab_ci_report",
+    "get_exit_code",
+    "format_summary_table",
+    "batch_check_files",
+    "CICDError",
+    "EXIT_SUCCESS",
+    "EXIT_THRESHOLD_FAILURE",
+    "EXIT_ANALYSIS_ERROR",
+    "EXIT_CONFIG_ERROR",
 ]
