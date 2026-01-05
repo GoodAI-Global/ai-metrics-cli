@@ -15,6 +15,11 @@ __author__ = "rogermsc"
 
 from .benchmarks import (
     load_benchmarks,
+    load_benchmarks_with_custom,
+    load_benchmark_file,
+    merge_benchmarks,
+    validate_benchmark_data,
+    create_custom_industry,
     get_benchmark_for_industry,
     get_available_industries,
     get_percentile_rank,
@@ -51,6 +56,7 @@ from .config import (
     ThresholdsConfig,
     NotificationsConfig,
     CustomTarget,
+    CustomBenchmark,
     ConfigError,
 )
 from .storage import (
@@ -85,6 +91,11 @@ __all__ = [
     "__author__",
     # Benchmarks
     "load_benchmarks",
+    "load_benchmarks_with_custom",
+    "load_benchmark_file",
+    "merge_benchmarks",
+    "validate_benchmark_data",
+    "create_custom_industry",
     "get_benchmark_for_industry",
     "get_available_industries",
     "get_percentile_rank",
@@ -117,6 +128,7 @@ __all__ = [
     "ThresholdsConfig",
     "NotificationsConfig",
     "CustomTarget",
+    "CustomBenchmark",
     "ConfigError",
     # Storage
     "MetricsStorage",

@@ -242,6 +242,52 @@ class CustomTarget:
 
 
 @dataclass
+class CustomBenchmark:
+    """
+    Custom benchmark definition with full percentile data.
+
+    Allows defining organization-specific benchmarks for metrics
+    that override or extend industry defaults.
+
+    Example in config:
+        custom_benchmarks:
+          my_industry:
+            custom_metric:
+              p25: 0.70
+              p50: 0.80
+              p75: 0.90
+              p90: 0.95
+              description: "Our custom accuracy metric"
+    """
+    p25: float  # 25th percentile
+    p50: float  # 50th percentile (median)
+    p75: float  # 75th percentile
+    p90: float  # 90th percentile
+    description: Optional[str] = None  # Human-readable description
+    higher_is_better: Optional[bool] = None  # Override default detection
+
+    def __post_init__(self) -> None:
+        _validate_numeric_bounds(self.p25, "p25")
+        _validate_numeric_bounds(self.p50, "p50")
+        _validate_numeric_bounds(self.p75, "p75")
+        _validate_numeric_bounds(self.p90, "p90")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to benchmark dictionary format."""
+        result = {
+            "p25": self.p25,
+            "p50": self.p50,
+            "p75": self.p75,
+            "p90": self.p90,
+        }
+        if self.description:
+            result["description"] = self.description
+        if self.higher_is_better is not None:
+            result["higher_is_better"] = self.higher_is_better
+        return result
+
+
+@dataclass
 class ProjectConfig:
     """Complete project configuration."""
     # Project metadata
@@ -252,8 +298,14 @@ class ProjectConfig:
     default_industry: str = "general"
     default_format: str = "json"
 
-    # Custom targets override benchmarks
+    # Custom targets override benchmarks (simple target/min/max)
     custom_targets: Dict[str, CustomTarget] = field(default_factory=dict)
+
+    # Custom benchmarks with full percentile data (industry -> metric -> benchmark)
+    custom_benchmarks: Dict[str, Dict[str, CustomBenchmark]] = field(default_factory=dict)
+
+    # Additional benchmark files to load
+    benchmark_files: list = field(default_factory=list)
 
     # CI/CD thresholds
     thresholds: ThresholdsConfig = field(default_factory=ThresholdsConfig)
@@ -271,6 +323,19 @@ class ProjectConfig:
     def __post_init__(self) -> None:
         _validate_format(self.default_format)
         _validate_storage_path(self.storage_path)
+
+    def get_merged_benchmarks(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get custom benchmarks merged into a dictionary format.
+
+        Returns dict of industry -> metric -> {p25, p50, p75, p90}.
+        """
+        result: Dict[str, Dict[str, Any]] = {}
+        for industry, metrics in self.custom_benchmarks.items():
+            result[industry] = {}
+            for metric_name, benchmark in metrics.items():
+                result[industry][metric_name] = benchmark.to_dict()
+        return result
 
 
 def _interpolate_env_vars(value: Any, strict: bool = False) -> Any:
@@ -540,6 +605,72 @@ def _build_config(raw: Dict[str, Any], config_path: Path) -> ProjectConfig:
         except (ValueError, TypeError) as e:
             raise ConfigError(f"Invalid custom target for {metric}: {e}")
 
+    # Build custom benchmarks
+    custom_benchmarks_raw = raw.get("custom_benchmarks", {})
+    custom_benchmarks: Dict[str, Dict[str, CustomBenchmark]] = {}
+
+    for industry, metrics_raw in custom_benchmarks_raw.items():
+        # Validate industry name
+        if not re.match(r'^[\w_-]+$', str(industry)):
+            raise ConfigError(
+                f"Invalid industry name in custom_benchmarks: {industry}. "
+                "Use only letters, numbers, underscores, and hyphens."
+            )
+
+        if not isinstance(metrics_raw, dict):
+            raise ConfigError(
+                f"custom_benchmarks.{industry} must contain metric definitions"
+            )
+
+        custom_benchmarks[industry] = {}
+        for metric, benchmark_raw in metrics_raw.items():
+            # Validate metric name
+            if not re.match(r'^[\w_-]+$', str(metric)):
+                raise ConfigError(
+                    f"Invalid metric name in custom_benchmarks.{industry}: {metric}. "
+                    "Use only letters, numbers, underscores, and hyphens."
+                )
+
+            if not isinstance(benchmark_raw, dict):
+                raise ConfigError(
+                    f"custom_benchmarks.{industry}.{metric} must be a benchmark object"
+                )
+
+            # Validate required percentile keys
+            required_keys = {"p25", "p50", "p75", "p90"}
+            missing = required_keys - set(benchmark_raw.keys())
+            if missing:
+                raise ConfigError(
+                    f"custom_benchmarks.{industry}.{metric} missing required keys: {missing}"
+                )
+
+            try:
+                custom_benchmarks[industry][metric] = CustomBenchmark(
+                    p25=float(benchmark_raw["p25"]),
+                    p50=float(benchmark_raw["p50"]),
+                    p75=float(benchmark_raw["p75"]),
+                    p90=float(benchmark_raw["p90"]),
+                    description=benchmark_raw.get("description"),
+                    higher_is_better=benchmark_raw.get("higher_is_better"),
+                )
+            except (ValueError, TypeError) as e:
+                raise ConfigError(
+                    f"Invalid benchmark value in custom_benchmarks.{industry}.{metric}: {e}"
+                )
+
+    # Parse benchmark files list
+    benchmark_files_raw = raw.get("benchmark_files", [])
+    if isinstance(benchmark_files_raw, str):
+        benchmark_files_raw = [benchmark_files_raw]
+    benchmark_files = []
+    for bf in benchmark_files_raw:
+        if not isinstance(bf, str):
+            raise ConfigError(f"benchmark_files entries must be strings, got: {type(bf)}")
+        # Validate path doesn't contain traversal
+        if ".." in bf:
+            raise ConfigError(f"benchmark_files path cannot contain '..': {bf}")
+        benchmark_files.append(bf)
+
     # Get format with validation
     fmt = defaults_raw.get("format", raw.get("format", "json"))
     if fmt not in VALID_FORMATS:
@@ -551,6 +682,8 @@ def _build_config(raw: Dict[str, Any], config_path: Path) -> ProjectConfig:
         default_industry=str(defaults_raw.get("industry", raw.get("industry", "general"))),
         default_format=fmt,
         custom_targets=custom_targets,
+        custom_benchmarks=custom_benchmarks,
+        benchmark_files=benchmark_files,
         thresholds=thresholds,
         notifications=notifications,
         store_results=bool(raw.get("store_results", False)),

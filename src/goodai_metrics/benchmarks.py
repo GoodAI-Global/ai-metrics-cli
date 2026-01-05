@@ -2,16 +2,21 @@
 Benchmark data loading and management.
 
 Loads industry benchmarks from external JSON file - never hardcoded.
+Supports custom benchmarks from config files and additional JSON/YAML files.
 """
 
 import json
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 
 class BenchmarkError(Exception):
     """Raised when benchmark data cannot be loaded or is invalid."""
     pass
+
+
+# Required percentile keys for validation
+REQUIRED_PERCENTILE_KEYS = {"p25", "p50", "p75", "p90"}
 
 
 def get_benchmarks_path() -> Path:
@@ -160,3 +165,200 @@ def get_percentile_rank(value: float, benchmark: Dict[str, float], higher_is_bet
             return "p25_to_p50"
         else:
             return "below_p25"
+
+
+def validate_benchmark_data(data: Dict[str, Any], source: str = "unknown") -> None:
+    """
+    Validate benchmark data structure.
+
+    Args:
+        data: Benchmark data to validate.
+        source: Description of data source for error messages.
+
+    Raises:
+        BenchmarkError: If data structure is invalid.
+    """
+    if not isinstance(data, dict):
+        raise BenchmarkError(f"{source}: Benchmark data must be a JSON object")
+
+    for industry, metrics in data.items():
+        if not isinstance(metrics, dict):
+            raise BenchmarkError(
+                f"{source}: Industry '{industry}' must contain a metrics object"
+            )
+
+        for metric_name, percentiles in metrics.items():
+            if not isinstance(percentiles, dict):
+                raise BenchmarkError(
+                    f"{source}: Metric '{metric_name}' in '{industry}' must contain percentile data"
+                )
+
+            missing = REQUIRED_PERCENTILE_KEYS - set(percentiles.keys())
+            if missing:
+                raise BenchmarkError(
+                    f"{source}: Metric '{metric_name}' in '{industry}' missing percentiles: {missing}"
+                )
+
+            # Validate numeric values
+            for key in REQUIRED_PERCENTILE_KEYS:
+                try:
+                    float(percentiles[key])
+                except (ValueError, TypeError):
+                    raise BenchmarkError(
+                        f"{source}: {industry}.{metric_name}.{key} must be a number"
+                    )
+
+
+def load_benchmark_file(filepath: Path) -> Dict[str, Any]:
+    """
+    Load benchmarks from a single JSON or YAML file.
+
+    Args:
+        filepath: Path to benchmark file.
+
+    Returns:
+        Dictionary containing benchmark data.
+
+    Raises:
+        BenchmarkError: If file cannot be loaded or is invalid.
+    """
+    filepath = Path(filepath)
+
+    if not filepath.exists():
+        raise BenchmarkError(f"Benchmark file not found: {filepath}")
+
+    # Security: Validate path doesn't escape allowed directories
+    if ".." in str(filepath):
+        raise BenchmarkError(f"Benchmark file path cannot contain '..': {filepath}")
+
+    suffix = filepath.suffix.lower()
+
+    try:
+        content = filepath.read_text(encoding="utf-8")
+    except (IOError, OSError, UnicodeDecodeError) as e:
+        raise BenchmarkError(f"Failed to read benchmark file {filepath}: {e}")
+
+    if suffix == ".json":
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as e:
+            raise BenchmarkError(f"Invalid JSON in {filepath}: {e}")
+
+    elif suffix in (".yaml", ".yml"):
+        try:
+            import yaml
+            data = yaml.safe_load(content)
+        except ImportError:
+            raise BenchmarkError(
+                f"YAML file {filepath} requires PyYAML. Install with: pip install pyyaml"
+            )
+        except Exception as e:
+            raise BenchmarkError(f"Invalid YAML in {filepath}: {e}")
+    else:
+        raise BenchmarkError(
+            f"Unsupported benchmark file format: {suffix}. Use .json, .yaml, or .yml"
+        )
+
+    if data is None:
+        data = {}
+
+    validate_benchmark_data(data, str(filepath))
+    return data
+
+
+def merge_benchmarks(*benchmark_dicts: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Merge multiple benchmark dictionaries.
+
+    Later dictionaries override earlier ones for matching industry/metric pairs.
+
+    Args:
+        *benchmark_dicts: Benchmark dictionaries to merge.
+
+    Returns:
+        Merged benchmark dictionary.
+    """
+    result: Dict[str, Dict[str, Any]] = {}
+
+    for benchmarks in benchmark_dicts:
+        if not benchmarks:
+            continue
+
+        for industry, metrics in benchmarks.items():
+            if industry not in result:
+                result[industry] = {}
+
+            for metric_name, percentiles in metrics.items():
+                result[industry][metric_name] = dict(percentiles)
+
+    return result
+
+
+def load_benchmarks_with_custom(
+    base_filepath: Optional[Path] = None,
+    additional_files: Optional[List[Path]] = None,
+    custom_benchmarks: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """
+    Load benchmarks with optional custom overrides.
+
+    Merges base benchmarks, additional files, and inline custom benchmarks.
+    Later sources override earlier ones.
+
+    Args:
+        base_filepath: Path to base benchmark file. If None, uses default.
+        additional_files: List of additional benchmark files to load.
+        custom_benchmarks: Inline custom benchmarks (from config).
+
+    Returns:
+        Merged benchmark dictionary.
+
+    Raises:
+        BenchmarkError: If any benchmark file is invalid.
+    """
+    # Load base benchmarks
+    base = load_benchmarks(base_filepath)
+
+    # Collect all benchmark sources
+    sources = [base]
+
+    # Load additional files
+    if additional_files:
+        for filepath in additional_files:
+            try:
+                additional = load_benchmark_file(Path(filepath))
+                sources.append(additional)
+            except BenchmarkError:
+                # Re-raise with context
+                raise
+
+    # Add inline custom benchmarks
+    if custom_benchmarks:
+        sources.append(custom_benchmarks)
+
+    # Merge all sources
+    return merge_benchmarks(*sources)
+
+
+def create_custom_industry(
+    industry_name: str,
+    metrics: Dict[str, Dict[str, float]],
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Create a custom industry benchmark definition.
+
+    Convenience function for programmatically creating benchmarks.
+
+    Args:
+        industry_name: Name for the custom industry.
+        metrics: Dict of metric_name -> {p25, p50, p75, p90}.
+
+    Returns:
+        Benchmark dict that can be merged with other benchmarks.
+
+    Raises:
+        BenchmarkError: If metric data is invalid.
+    """
+    data = {industry_name: metrics}
+    validate_benchmark_data(data, f"custom industry '{industry_name}'")
+    return data
