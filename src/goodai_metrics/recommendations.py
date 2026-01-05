@@ -211,7 +211,8 @@ def generate_recommendation(metric: str, value: float, benchmark: Dict) -> Dict[
 
 def generate_all_recommendations(
     analysis_results: Dict[str, Any],
-    industry_benchmarks: Dict[str, Dict]
+    industry_benchmarks: Dict[str, Dict],
+    custom_targets: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Generate recommendations for all analyzed metrics.
@@ -219,6 +220,8 @@ def generate_all_recommendations(
     Args:
         analysis_results: Results from MetricsAnalyzer.analyze().
         industry_benchmarks: Benchmark data for the industry.
+        custom_targets: Optional dict of metric name -> CustomTarget (or dict with target/minimum/maximum).
+                       Custom targets override industry benchmarks.
 
     Returns:
         List of recommendation dictionaries, sorted by priority.
@@ -227,12 +230,32 @@ def generate_all_recommendations(
 
     for metric_analysis in analysis_results.get("analysis", []):
         metric_name = metric_analysis["metric"]
+        current_value = metric_analysis["current_value"]
 
+        # Check if there's a custom target for this metric
+        if custom_targets and metric_name in custom_targets:
+            target = custom_targets[metric_name]
+            # Convert CustomTarget to benchmark-like dict
+            # Use target as p50, with reasonable spread for other percentiles
+            target_value = target.target if hasattr(target, 'target') else target.get('target')
+            if target_value is not None:
+                benchmark = {
+                    "p25": target_value * 0.85,  # 15% below target
+                    "p50": target_value,          # Target is the goal
+                    "p75": target_value * 1.10,   # 10% above target
+                    "p90": target_value * 1.20,   # 20% above target
+                }
+                rec = generate_recommendation(metric_name, current_value, benchmark)
+                rec["has_custom_target"] = True
+                recommendations.append(rec)
+                continue
+
+        # Fall back to industry benchmark
         if metric_name in industry_benchmarks:
             benchmark = industry_benchmarks[metric_name]
             rec = generate_recommendation(
                 metric_name,
-                metric_analysis["current_value"],
+                current_value,
                 benchmark
             )
             recommendations.append(rec)

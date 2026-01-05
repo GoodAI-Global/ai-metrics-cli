@@ -182,3 +182,99 @@ class TestHealthCheck:
         ]
         result = check_health_thresholds(recommendations)
         assert result["passed"] is False
+
+
+class TestCustomTargets:
+    """Tests for custom targets integration."""
+
+    def test_custom_target_overrides_benchmark(self):
+        """Custom target takes precedence over industry benchmark."""
+        analysis_results = {
+            "analysis": [
+                {"metric": "accuracy", "current_value": 0.85},
+            ]
+        }
+        industry_benchmarks = {
+            "accuracy": {"p25": 0.80, "p50": 0.90, "p75": 0.95, "p90": 0.98}
+        }
+        # Custom target is lower than industry benchmark
+        custom_targets = {
+            "accuracy": {"target": 0.80}  # Lower target
+        }
+
+        recommendations = generate_all_recommendations(
+            analysis_results,
+            industry_benchmarks,
+            custom_targets=custom_targets,
+        )
+
+        assert len(recommendations) == 1
+        rec = recommendations[0]
+        # With target of 0.80 and value of 0.85, we're above target (no gap)
+        assert rec["has_custom_target"] is True
+        assert rec["benchmark_p50"] == 0.80
+
+    def test_custom_target_with_object(self):
+        """Custom target works with CustomTarget-like object."""
+        from types import SimpleNamespace
+
+        analysis_results = {
+            "analysis": [
+                {"metric": "latency_ms", "current_value": 150},
+            ]
+        }
+        industry_benchmarks = {
+            "latency_ms": {"p25": 100, "p50": 200, "p75": 300, "p90": 500}
+        }
+        # Custom target using object with .target attribute
+        custom_targets = {
+            "latency_ms": SimpleNamespace(target=100, minimum=50, maximum=200)
+        }
+
+        recommendations = generate_all_recommendations(
+            analysis_results,
+            industry_benchmarks,
+            custom_targets=custom_targets,
+        )
+
+        assert len(recommendations) == 1
+        rec = recommendations[0]
+        assert rec["has_custom_target"] is True
+        assert rec["benchmark_p50"] == 100
+
+    def test_no_custom_target_uses_benchmark(self):
+        """Metrics without custom targets use industry benchmark."""
+        analysis_results = {
+            "analysis": [
+                {"metric": "accuracy", "current_value": 0.80},
+                {"metric": "latency_ms", "current_value": 200},
+            ]
+        }
+        industry_benchmarks = {
+            "accuracy": {"p25": 0.85, "p50": 0.90, "p75": 0.95, "p90": 0.98},
+            "latency_ms": {"p25": 100, "p50": 150, "p75": 200, "p90": 300},
+        }
+        # Only custom target for accuracy
+        custom_targets = {
+            "accuracy": {"target": 0.85}
+        }
+
+        recommendations = generate_all_recommendations(
+            analysis_results,
+            industry_benchmarks,
+            custom_targets=custom_targets,
+        )
+
+        assert len(recommendations) == 2
+
+        # Find each recommendation
+        accuracy_rec = next(r for r in recommendations if r["metric"] == "accuracy")
+        latency_rec = next(r for r in recommendations if r["metric"] == "latency_ms")
+
+        # accuracy uses custom target
+        assert accuracy_rec.get("has_custom_target") is True
+        assert accuracy_rec["benchmark_p50"] == 0.85
+
+        # latency_ms uses industry benchmark
+        assert latency_rec.get("has_custom_target") is None or latency_rec.get("has_custom_target") is False
+        assert latency_rec["benchmark_p50"] == 150

@@ -301,9 +301,13 @@ def analyze(
         # Get industry benchmarks (includes any custom overrides)
         industry_benchmarks = analyzer.industry_benchmarks
 
-        # Generate recommendations
+        # Generate recommendations (with custom targets if configured)
         with timed(logger, "generate_recommendations"):
-            recommendations = generate_all_recommendations(analysis_results, industry_benchmarks)
+            recommendations = generate_all_recommendations(
+                analysis_results,
+                industry_benchmarks,
+                custom_targets=config.custom_targets or None,
+            )
             overall_health = determine_overall_health(recommendations)
 
         logger.metric("metrics_analyzed", analysis_results.get("metrics_analyzed", 0))
@@ -406,8 +410,12 @@ def health(
         # Get industry benchmarks (includes any custom overrides)
         industry_benchmarks = analyzer.industry_benchmarks
 
-        # Generate recommendations
-        recommendations = generate_all_recommendations(analysis_results, industry_benchmarks)
+        # Generate recommendations (with custom targets if configured)
+        recommendations = generate_all_recommendations(
+            analysis_results,
+            industry_benchmarks,
+            custom_targets=config.custom_targets or None,
+        )
 
         # Check health thresholds
         health_result = check_health_thresholds(
@@ -592,9 +600,13 @@ def report(
         metrics = analyzer.load_csv(filepath)
         analysis_results = analyzer.analyze(metrics)
 
-        # Get industry benchmarks and generate recommendations
+        # Get industry benchmarks and generate recommendations (with custom targets)
         industry_benchmarks = analyzer.industry_benchmarks
-        recommendations = generate_all_recommendations(analysis_results, industry_benchmarks)
+        recommendations = generate_all_recommendations(
+            analysis_results,
+            industry_benchmarks,
+            custom_targets=config.custom_targets or None,
+        )
         overall_health = determine_overall_health(recommendations)
 
         # Generate PDF
@@ -1390,7 +1402,11 @@ def ci_check(
 
         # Get industry benchmarks (includes any custom overrides)
         industry_benchmarks = analyzer.industry_benchmarks
-        recommendations = generate_all_recommendations(analysis_results, industry_benchmarks)
+        recommendations = generate_all_recommendations(
+            analysis_results,
+            industry_benchmarks,
+            custom_targets=config.custom_targets or None,
+        )
 
         health_result = check_health_thresholds(
             recommendations,
