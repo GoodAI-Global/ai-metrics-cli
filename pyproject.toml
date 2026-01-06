@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "goodai-metrics"
-version = "1.0.0"
+version = "0.1.0"
 description = "CLI tool for analyzing AI implementation metrics - Good AI Consultancy"
 readme = "README.md"
 license = {text = "MIT"}
@@ -13,7 +13,7 @@ authors = [
 ]
 keywords = ["ai", "metrics", "analytics", "machine-learning", "enterprise"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",

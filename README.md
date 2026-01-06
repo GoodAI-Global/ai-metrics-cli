@@ -2,25 +2,57 @@
 
 **Enterprise AI Implementation Analytics**
 
-A production CLI tool for analyzing AI implementation metrics and producing actionable recommendations.
+A CLI tool for analyzing AI implementation metrics and producing actionable recommendations.
 
 > *Evidence over opinions. Leverage, not lore. No fantasy metrics.*
 
-[![PyPI version](https://badge.fury.io/py/goodai-metrics.svg)](https://pypi.org/project/goodai-metrics/)
+[![CI](https://github.com/goodai/goodai-metrics/actions/workflows/ci.yml/badge.svg)](https://github.com/goodai/goodai-metrics/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
 
-## Quickstart in 60 Seconds
+## What This Is
+
+- A **CLI tool** for analyzing AI metrics against industry benchmarks
+- Provides **actionable recommendations** with priority levels
+- Supports **CI/CD integration** with JUnit XML, GitHub Actions, and GitLab CI
+- Includes **optional REST API** for integration with dashboards
+- Stores **historical data** for trend analysis
+- Generates **PDF reports** for stakeholders
+
+## What This Is NOT
+
+- Not a metrics collection agent (you provide the CSV data)
+- Not a monitoring/alerting system (use Prometheus/Grafana for that)
+- Not a machine learning framework
+- Not validated for regulated industries without your own compliance review
+- Benchmarks are illustrative, not guarantees of industry standards
+
+---
+
+## Quickstart (< 5 minutes)
 
 ```bash
 # Install
 pip install goodai-metrics
 
-# Run with sample data
+# Analyze built-in sample data
 goodai-metrics analyze --sample manufacturing
 
-# That's it! You'll see a JSON report with recommendations.
+# Analyze your own CSV
+goodai-metrics analyze your-metrics.csv --industry manufacturing
+
+# Quick health check for CI/CD
+goodai-metrics health your-metrics.csv
+```
+
+Your CSV needs these columns:
+
+```csv
+metric,value,timestamp
+accuracy,0.87,2025-01-01
+latency_ms,350,2025-01-01
+error_rate,0.11,2025-01-01
 ```
 
 ---
@@ -31,261 +63,133 @@ goodai-metrics analyze --sample manufacturing
 pip install goodai-metrics
 ```
 
+With optional features:
+
+```bash
+pip install "goodai-metrics[server]"   # REST API
+pip install "goodai-metrics[reports]"  # PDF reports
+pip install "goodai-metrics[all]"      # Everything
+```
+
 For development:
 
 ```bash
 git clone https://github.com/goodai/goodai-metrics.git
 cd goodai-metrics
-pip install -e ".[dev]"
+make setup
 ```
 
 ---
 
 ## CLI Commands
 
-### 1. Analyze Metrics
+| Command | Description |
+|---------|-------------|
+| `analyze` | Analyze metrics against benchmarks |
+| `health` | CI/CD health check (exit 0/1) |
+| `compare` | Compare two CSV files |
+| `report` | Generate PDF report |
+| `trends` | View historical trends |
+| `config` | Manage configuration |
+| `serve` | Start REST API server |
+| `ci check` | CI/CD with JUnit/GitHub/GitLab output |
 
-Analyze your AI metrics against industry benchmarks.
-
-```bash
-# Analyze a CSV file
-goodai-metrics analyze metrics.csv --industry manufacturing
-
-# Use built-in sample data
-goodai-metrics analyze --sample manufacturing
-goodai-metrics analyze --sample insurance
-goodai-metrics analyze --sample aquaculture
-goodai-metrics analyze --sample general
-
-# Output as text instead of JSON
-goodai-metrics analyze --sample manufacturing -f text
-```
-
-### 2. Health Check (CI/CD)
-
-Quick pass/fail check for your CI/CD pipelines.
+### Examples
 
 ```bash
-# Basic health check (exits 0 on pass, 1 on fail)
-goodai-metrics health metrics.csv
+# Analyze with text output
+goodai-metrics analyze metrics.csv -f text
 
-# With custom thresholds
+# Health check with custom thresholds
 goodai-metrics health metrics.csv --max-high-priority 1 --max-gap 50
 
-# Example in CI/CD
-goodai-metrics health ./metrics.csv --industry manufacturing || exit 1
-```
-
-### 3. Compare Metrics
-
-Compare metrics between two time periods.
-
-```bash
-# Compare before and after
+# Compare before/after
 goodai-metrics compare before.csv after.csv
 
-# With industry context
-goodai-metrics compare q1.csv q2.csv --industry manufacturing
+# Generate PDF report
+goodai-metrics report metrics.csv -o report.pdf
 
-# Output as text
-goodai-metrics compare before.csv after.csv -f text
-```
-
-### 4. List Industries
-
-Show available industries and their metrics.
-
-```bash
-goodai-metrics list-industries
+# CI/CD with JUnit output
+goodai-metrics ci check metrics.csv --format junit -o results.xml
 ```
 
 ---
 
-## Input Format
+## Configuration
 
-Your metrics CSV should have these columns:
+Create `.goodai-metrics.yaml`:
 
-| Column | Required | Description |
-|--------|----------|-------------|
-| `metric` | Yes | Metric name (e.g., `accuracy`, `latency_ms`) |
-| `value` | Yes | Numeric value |
-| `timestamp` | No | ISO date (e.g., `2025-01-01`) |
+```yaml
+project: my-ai-project
 
-**Example `metrics.csv`:**
+defaults:
+  industry: manufacturing
+  format: json
 
-```csv
-metric,value,timestamp
-accuracy,0.87,2025-01-01
-latency_ms,350,2025-01-01
-error_rate,0.11,2025-01-01
-adoption_percent,45,2025-01-01
+thresholds:
+  fail_on_priority: HIGH
+  max_gap_percent: 30.0
+  max_high_priority: 0
+
+# Optional: webhook notifications
+notifications:
+  on_regression: true
+  webhook_url: ${WEBHOOK_URL}
+
+store_results: true
+storage_path: .goodai-metrics/history.db
 ```
 
 ---
 
-## Output Format
+## Supported Industries
 
-### JSON Output (default)
-
-```json
-{
-  "summary": {
-    "industry": "manufacturing",
-    "metrics_analyzed": 4,
-    "high_priority_gaps": 2,
-    "overall_health": "NEEDS_ATTENTION"
-  },
-  "recommendations": [
-    {
-      "metric": "latency_ms",
-      "current_value": 350,
-      "benchmark_p50": 200,
-      "gap_percent": 75.0,
-      "priority": "HIGH",
-      "effort": "Medium",
-      "recommendation": "Review batch size and model quantization options..."
-    }
-  ],
-  "detailed_analysis": [...],
-  "metrics_without_benchmarks": []
-}
-```
-
-### Text Output
-
-```
-============================================================
-GOOD AI METRICS ANALYSIS REPORT
-============================================================
-
-SUMMARY
-----------------------------------------
-Industry:              manufacturing
-Metrics Analyzed:      4
-With Benchmarks:       4
-High Priority Gaps:    2
-Overall Health:        NEEDS_ATTENTION
-
-RECOMMENDATIONS
-----------------------------------------
-
-1. [!!] latency_ms
-   Current: 350 | Benchmark: 200
-   Gap: 75.0% | Effort: Medium
-   > Review batch size and model quantization options...
-```
-
----
-
-## Supported Metrics by Industry
-
-### Manufacturing
-- `accuracy` - Model prediction accuracy
-- `latency_ms` - Inference latency in milliseconds
-- `error_rate` - Prediction error rate
-- `adoption_percent` - User adoption percentage
-- `cost_per_inference` - Cost per model inference
-
-### Insurance
-- `accuracy` - Model prediction accuracy
-- `processing_time_hours` - End-to-end processing time
-- `straight_through_rate` - Automated processing rate
-- `error_rate` - Processing error rate
-
-### Aquaculture
-- `prediction_accuracy` - Prediction model accuracy
-- `early_warning_hours` - Early warning lead time
-- `feed_efficiency_improvement` - Feed optimization improvement
-
-### General
-- `accuracy` - General model accuracy
-- `latency_ms` - Inference latency
-- `error_rate` - Error rate
+- **manufacturing** - accuracy, latency_ms, error_rate, adoption_percent, cost_per_inference
+- **insurance** - accuracy, processing_time_hours, straight_through_rate, error_rate
+- **aquaculture** - prediction_accuracy, early_warning_hours, feed_efficiency_improvement
+- **general** - accuracy, latency_ms, error_rate
 
 ---
 
 ## Priority Levels
 
-Recommendations are prioritized based on gap from industry median (p50):
-
-| Gap | Priority | Action |
-|-----|----------|--------|
+| Gap from Benchmark | Priority | Action |
+|-------------------|----------|--------|
 | > 20% | **HIGH** | Address immediately |
 | 10-20% | **MEDIUM** | Plan for next quarter |
 | < 10% | **LOW** | Monitor and maintain |
 
 ---
 
-## Health Status
-
-Overall health is determined by:
-
-| Condition | Status |
-|-----------|--------|
-| 2+ HIGH priority items | `CRITICAL` |
-| 1 HIGH or 2+ MEDIUM | `NEEDS_ATTENTION` |
-| All LOW priority | `HEALTHY` |
-
----
-
-## Python API
-
-You can also use Good AI Metrics programmatically:
-
-```python
-from goodai_metrics import (
-    MetricsAnalyzer,
-    load_benchmarks,
-    get_benchmark_for_industry,
-    generate_all_recommendations,
-    determine_overall_health
-)
-
-# Load benchmarks
-benchmarks = load_benchmarks()
-industry_benchmarks = get_benchmark_for_industry("manufacturing", benchmarks)
-
-# Analyze metrics
-analyzer = MetricsAnalyzer(industry="manufacturing")
-metrics = analyzer.load_csv("metrics.csv")
-results = analyzer.analyze(metrics)
-
-# Generate recommendations
-recommendations = generate_all_recommendations(results, industry_benchmarks)
-health = determine_overall_health(recommendations)
-
-print(f"Health: {health}")
-for rec in recommendations:
-    print(f"[{rec['priority']}] {rec['metric']}: {rec['recommendation']}")
-```
-
----
-
 ## Development
 
 ```bash
-# Install dev dependencies
-pip install -e ".[dev]"
-
-# Run tests
-pytest
-
-# Run demo
-python demo_run.py
+make setup   # Install dependencies
+make lint    # Run linter
+make test    # Run tests
+make clean   # Clean artifacts
 ```
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
 ## About Good AI
 
-Good AI is a premium enterprise AI consultancy. We believe in:
+Good AI is an enterprise AI consultancy. We believe in:
 
 - **Evidence over opinions** - Recommendations tied to measurable gaps
 - **Leverage, not lore** - Practical tools, not frameworks
 - **No fantasy metrics** - Conservative benchmarks from real implementations
-
----
-
-## License
-
-MIT License - see [LICENSE](LICENSE) for details.

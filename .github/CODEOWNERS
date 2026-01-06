@@ -1,0 +1,19 @@
+# Code Owners for Good AI Metrics
+# These users will be requested for review on PRs
+
+# Default owners for everything
+* @rogermsc
+
+# Core modules
+/src/goodai_metrics/ @rogermsc
+
+# Tests
+/tests/ @rogermsc
+
+# CI/CD and infrastructure
+/.github/ @rogermsc
+/Makefile @rogermsc
+
+# Documentation
+/README.md @rogermsc
+/CHANGELOG.md @rogermsc
