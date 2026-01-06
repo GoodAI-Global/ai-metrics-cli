@@ -6,8 +6,10 @@ A CLI tool for analyzing AI implementation metrics and producing actionable reco
 
 > *Evidence over opinions. Leverage, not lore. No fantasy metrics.*
 
-[![CI](https://github.com/goodai/goodai-metrics/actions/workflows/ci.yml/badge.svg)](https://github.com/goodai/goodai-metrics/actions/workflows/ci.yml)
+[![CI](https://github.com/GoodAI-Global/ai-metrics-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/GoodAI-Global/ai-metrics-cli/actions/workflows/ci.yml)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 ---
 
@@ -74,8 +76,8 @@ pip install "goodai-metrics[all]"      # Everything
 For development:
 
 ```bash
-git clone https://github.com/goodai/goodai-metrics.git
-cd goodai-metrics
+git clone https://github.com/GoodAI-Global/ai-metrics-cli.git
+cd ai-metrics-cli
 make setup
 ```
 
