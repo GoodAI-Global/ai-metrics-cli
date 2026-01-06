@@ -11,7 +11,7 @@ Core Principles:
 """
 
 __version__ = "0.1.0"
-__author__ = "rogermsc"
+__author__ = "Good AI"
 
 from .analyzer import (
     AnalysisError,
