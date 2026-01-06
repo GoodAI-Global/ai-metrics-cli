@@ -10,7 +10,7 @@ Core Principles:
 - No fantasy metrics: Conservative benchmarks from real implementations
 """
 
-__version__ = "1.0.0"
+__version__ = "0.1.0"
 __author__ = "rogermsc"
 
 from .analyzer import (
