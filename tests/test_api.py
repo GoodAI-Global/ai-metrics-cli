@@ -3,7 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from goodai_metrics.api import create_app, app
+from goodai_metrics.api import app
 
 
 @pytest.fixture
@@ -219,7 +219,9 @@ class TestHistory:
 
     def test_list_history_with_params(self, client):
         """GET /api/v1/history accepts filter params."""
-        response = client.get("/api/v1/history?project=test&industry=manufacturing&limit=10")
+        response = client.get(
+            "/api/v1/history?project=test&industry=manufacturing&limit=10"
+        )
         assert response.status_code == 200
 
     def test_get_history_not_found(self, client):
@@ -336,8 +338,7 @@ class TestInputValidation:
         """Number of metrics is limited."""
         payload = {
             "metrics": [
-                {"metric": f"metric_{i}", "value": 0.5}
-                for i in range(1500)  # Too many
+                {"metric": f"metric_{i}", "value": 0.5} for i in range(1500)  # Too many
             ],
             "industry": "manufacturing",
         }

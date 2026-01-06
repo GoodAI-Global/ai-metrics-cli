@@ -12,12 +12,13 @@ import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any, Optional
 from xml.dom import minidom
 
 
 class CICDError(Exception):
     """Raised when CI/CD integration fails."""
+
     pass
 
 
@@ -39,11 +40,11 @@ def _sanitize_text(text: str, max_length: int = 500) -> str:
         return ""
 
     # Remove control characters except newlines and tabs
-    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", text)
 
     # Limit length
     if len(text) > max_length:
-        text = text[:max_length - 3] + "..."
+        text = text[: max_length - 3] + "..."
 
     return text
 
@@ -60,14 +61,16 @@ def _validate_file_path(filepath: Path) -> None:
     str_path = str(filepath)
 
     if len(str_path) > MAX_FILE_PATH_LENGTH:
-        raise CICDError(f"File path too long: {len(str_path)} chars (max {MAX_FILE_PATH_LENGTH})")
+        raise CICDError(
+            f"File path too long: {len(str_path)} chars (max {MAX_FILE_PATH_LENGTH})"
+        )
 
-    if '..' in str_path:
+    if ".." in str_path:
         raise CICDError(f"File path cannot contain '..': {filepath}")
 
 
 def generate_junit_xml(
-    health_results: List[Dict[str, Any]],
+    health_results: list[dict[str, Any]],
     suite_name: str = "GoodAI-Metrics",
     timestamp: Optional[datetime] = None,
 ) -> str:
@@ -137,9 +140,13 @@ def generate_junit_xml(
         if result.get("error"):
             # Analysis error
             error_elem = ET.SubElement(testcase, "error")
-            error_elem.set("message", _sanitize_xml_text(result.get("error", "Unknown error"), 200))
+            error_elem.set(
+                "message", _sanitize_xml_text(result.get("error", "Unknown error"), 200)
+            )
             error_elem.set("type", "AnalysisError")
-            error_elem.text = _sanitize_xml_text(result.get("error_details", ""), MAX_MESSAGE_LENGTH)
+            error_elem.text = _sanitize_xml_text(
+                result.get("error_details", ""), MAX_MESSAGE_LENGTH
+            )
             total_errors += 1
         elif not passed:
             # Threshold failure
@@ -177,15 +184,15 @@ def generate_junit_xml(
         dom = minidom.parseString(xml_string)
         pretty_xml = dom.toprettyxml(indent="  ", encoding=None)
         # Remove extra blank lines
-        lines = [line for line in pretty_xml.split('\n') if line.strip()]
-        return '\n'.join(lines)
+        lines = [line for line in pretty_xml.split("\n") if line.strip()]
+        return "\n".join(lines)
     except Exception:
         # Fall back to raw XML
         return f'<?xml version="1.0" encoding="UTF-8"?>\n{xml_string}'
 
 
 def generate_github_annotations(
-    health_results: List[Dict[str, Any]],
+    health_results: list[dict[str, Any]],
 ) -> str:
     """
     Generate GitHub Actions workflow annotations.
@@ -235,16 +242,20 @@ def generate_github_annotations(
     failed_count = total - passed_count
 
     if failed_count > 0:
-        lines.append(f"::error::Health check summary: {failed_count}/{total} checks failed")
+        lines.append(
+            f"::error::Health check summary: {failed_count}/{total} checks failed"
+        )
     else:
-        lines.append(f"::notice::Health check summary: {passed_count}/{total} checks passed")
+        lines.append(
+            f"::notice::Health check summary: {passed_count}/{total} checks passed"
+        )
 
     return "\n".join(lines)
 
 
 def generate_gitlab_ci_report(
-    health_results: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    health_results: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """
     Generate GitLab CI Code Quality report format.
 
@@ -263,18 +274,22 @@ def generate_gitlab_ci_report(
         file_path = result.get("file", "unknown")
 
         if result.get("error"):
-            issues.append({
-                "type": "issue",
-                "check_name": "metrics-analysis-error",
-                "description": _sanitize_text(result.get("error", "Analysis error"), 200),
-                "categories": ["Bug Risk"],
-                "severity": "critical",
-                "location": {
-                    "path": _sanitize_text(str(file_path), 200),
-                    "lines": {"begin": 1}
-                },
-                "fingerprint": f"error-{hash(str(file_path)) & 0xFFFFFFFF:08x}"
-            })
+            issues.append(
+                {
+                    "type": "issue",
+                    "check_name": "metrics-analysis-error",
+                    "description": _sanitize_text(
+                        result.get("error", "Analysis error"), 200
+                    ),
+                    "categories": ["Bug Risk"],
+                    "severity": "critical",
+                    "location": {
+                        "path": _sanitize_text(str(file_path), 200),
+                        "lines": {"begin": 1},
+                    },
+                    "fingerprint": f"error-{hash(str(file_path)) & 0xFFFFFFFF:08x}",
+                }
+            )
 
         elif not result.get("passed", False):
             for failure in result.get("failures", [])[:10]:
@@ -287,26 +302,28 @@ def generate_gitlab_ci_report(
                 elif "gap" in check.lower():
                     severity = "minor"
 
-                issues.append({
-                    "type": "issue",
-                    "check_name": f"metrics-{_sanitize_text(check.lower().replace(' ', '-'), 50)}",
-                    "description": _sanitize_text(
-                        f"{check}: expected {failure.get('expected')}, got {failure.get('actual')}",
-                        200
-                    ),
-                    "categories": ["Performance"],
-                    "severity": severity,
-                    "location": {
-                        "path": _sanitize_text(str(file_path), 200),
-                        "lines": {"begin": 1}
-                    },
-                    "fingerprint": f"{check}-{hash(str(file_path)) & 0xFFFFFFFF:08x}"
-                })
+                issues.append(
+                    {
+                        "type": "issue",
+                        "check_name": f"metrics-{_sanitize_text(check.lower().replace(' ', '-'), 50)}",
+                        "description": _sanitize_text(
+                            f"{check}: expected {failure.get('expected')}, got {failure.get('actual')}",
+                            200,
+                        ),
+                        "categories": ["Performance"],
+                        "severity": severity,
+                        "location": {
+                            "path": _sanitize_text(str(file_path), 200),
+                            "lines": {"begin": 1},
+                        },
+                        "fingerprint": f"{check}-{hash(str(file_path)) & 0xFFFFFFFF:08x}",
+                    }
+                )
 
     return issues
 
 
-def get_exit_code(health_results: List[Dict[str, Any]]) -> int:
+def get_exit_code(health_results: list[dict[str, Any]]) -> int:
     """
     Determine appropriate exit code from health results.
 
@@ -334,7 +351,7 @@ def get_exit_code(health_results: List[Dict[str, Any]]) -> int:
 
 
 def format_summary_table(
-    health_results: List[Dict[str, Any]],
+    health_results: list[dict[str, Any]],
     show_details: bool = True,
 ) -> str:
     """
@@ -356,7 +373,9 @@ def format_summary_table(
     # Summary counts
     total = len(health_results)
     passed = sum(1 for r in health_results if r.get("passed", False))
-    failed = sum(1 for r in health_results if not r.get("passed", False) and not r.get("error"))
+    failed = sum(
+        1 for r in health_results if not r.get("passed", False) and not r.get("error")
+    )
     errors = sum(1 for r in health_results if r.get("error"))
 
     lines.append(f"Total Checks:  {total}")
@@ -409,10 +428,10 @@ def format_summary_table(
 
 
 def batch_check_files(
-    file_paths: List[Path],
+    file_paths: list[Path],
     check_function,
     max_files: int = MAX_FILES_PER_BATCH,
-) -> Tuple[List[Dict[str, Any]], int]:
+) -> tuple[list[dict[str, Any]], int]:
     """
     Run health checks on multiple files.
 
@@ -440,7 +459,9 @@ def batch_check_files(
         try:
             result = check_function(filepath)
             result["file"] = str(filepath)
-            result["duration_seconds"] = (datetime.utcnow() - start_time).total_seconds()
+            result["duration_seconds"] = (
+                datetime.utcnow() - start_time
+            ).total_seconds()
         except Exception as e:
             result = {
                 "file": str(filepath),

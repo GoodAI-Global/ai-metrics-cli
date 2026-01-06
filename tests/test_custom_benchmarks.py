@@ -7,18 +7,17 @@ from pathlib import Path
 import pytest
 
 from goodai_metrics.benchmarks import (
-    load_benchmarks,
+    BenchmarkError,
+    create_custom_industry,
     load_benchmark_file,
     load_benchmarks_with_custom,
     merge_benchmarks,
     validate_benchmark_data,
-    create_custom_industry,
-    BenchmarkError,
 )
 from goodai_metrics.config import (
-    load_config,
-    CustomBenchmark,
     ConfigError,
+    CustomBenchmark,
+    load_config,
 )
 
 
@@ -233,9 +232,7 @@ class TestLoadBenchmarkFile:
 
     def test_load_json_file(self):
         """Loads JSON benchmark file."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(
                 {
                     "test_industry": {
@@ -356,9 +353,7 @@ custom_benchmarks:
       p90: 0.95
       description: "Custom metric"
 """
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(config_content)
             f.flush()
 
@@ -381,9 +376,7 @@ custom_benchmarks:
       p75: 0.90
       p90: 0.95
 """
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(config_content)
             f.flush()
 
@@ -404,9 +397,7 @@ custom_benchmarks:
       p75: 0.90
       p90: 0.95
 """
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(config_content)
             f.flush()
 
@@ -423,9 +414,7 @@ custom_benchmarks:
       p50: 0.80
       # Missing p75 and p90
 """
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(config_content)
             f.flush()
 
@@ -440,9 +429,7 @@ benchmark_files:
   - custom/benchmarks.json
   - other/benchmarks.yaml
 """
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(config_content)
             f.flush()
 
@@ -456,9 +443,7 @@ benchmark_files:
 benchmark_files:
   - ../../../etc/passwd
 """
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(config_content)
             f.flush()
 

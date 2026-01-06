@@ -24,25 +24,33 @@ from collections import OrderedDict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException, Query, Request, Path as FastAPIPath, APIRouter
+from fastapi import (
+    APIRouter,
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+)
+from fastapi import (
+    Path as FastAPIPath,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from . import __version__
-from .analyzer import MetricsAnalyzer, AnalysisError
-from .benchmarks import load_benchmarks, get_benchmark_for_industry, BenchmarkError
-from .config import load_config, ProjectConfig, ConfigError
-from .storage import MetricsStorage, StorageError
-from .logging_config import setup_logging, get_logger, set_context_id, clear_context_id
+from .analyzer import AnalysisError, MetricsAnalyzer
+from .benchmarks import BenchmarkError, get_benchmark_for_industry, load_benchmarks
+from .config import ConfigError, ProjectConfig, load_config
+from .logging_config import clear_context_id, get_logger, set_context_id
 from .recommendations import (
-    generate_all_recommendations,
-    determine_overall_health,
     check_health_thresholds,
+    determine_overall_health,
+    generate_all_recommendations,
 )
-
+from .storage import MetricsStorage, StorageError
 
 # ============================================================================
 # Configuration and Constants
@@ -72,22 +80,17 @@ MAX_METRIC_VALUE = 1e12
 # Pydantic Models for Request/Response Validation
 # ============================================================================
 
+
 class MetricInput(BaseModel):
     """Single metric input for analysis."""
 
     model_config = ConfigDict(extra="forbid")
 
     metric: str = Field(
-        ...,
-        min_length=1,
-        max_length=MAX_METRIC_NAME_LENGTH,
-        description="Metric name"
+        ..., min_length=1, max_length=MAX_METRIC_NAME_LENGTH, description="Metric name"
     )
     value: float = Field(
-        ...,
-        ge=MIN_METRIC_VALUE,
-        le=MAX_METRIC_VALUE,
-        description="Metric value"
+        ..., ge=MIN_METRIC_VALUE, le=MAX_METRIC_VALUE, description="Metric value"
     )
 
     @field_validator("metric")
@@ -107,6 +110,7 @@ class MetricInput(BaseModel):
     def validate_value(cls, v: float) -> float:
         """Ensure value is not NaN or infinite."""
         import math
+
         if math.isnan(v) or math.isinf(v):
             raise ValueError("Value must be a finite number")
         return v
@@ -117,25 +121,24 @@ class AnalyzeRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    metrics: List[MetricInput] = Field(
+    metrics: list[MetricInput] = Field(
         ...,
         min_length=1,
         max_length=MAX_METRICS_COUNT,
-        description="List of metrics to analyze"
+        description="List of metrics to analyze",
     )
     industry: str = Field(
         default="general",
         max_length=MAX_INDUSTRY_LENGTH,
-        description="Industry for benchmark comparison"
+        description="Industry for benchmark comparison",
     )
     store_results: bool = Field(
-        default=False,
-        description="Store results in history database"
+        default=False, description="Store results in history database"
     )
     project: Optional[str] = Field(
         default=None,
         max_length=MAX_PROJECT_NAME_LENGTH,
-        description="Project name for result tracking"
+        description="Project name for result tracking",
     )
 
     @field_validator("industry")
@@ -162,28 +165,22 @@ class HealthCheckRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    metrics: List[MetricInput] = Field(
+    metrics: list[MetricInput] = Field(
         ...,
         min_length=1,
         max_length=MAX_METRICS_COUNT,
-        description="List of metrics to check"
+        description="List of metrics to check",
     )
     industry: str = Field(
         default="general",
         max_length=MAX_INDUSTRY_LENGTH,
-        description="Industry for benchmark comparison"
+        description="Industry for benchmark comparison",
     )
     max_high_priority: int = Field(
-        default=0,
-        ge=0,
-        le=100,
-        description="Maximum allowed HIGH priority items"
+        default=0, ge=0, le=100, description="Maximum allowed HIGH priority items"
     )
     max_gap_percent: float = Field(
-        default=30.0,
-        ge=0,
-        le=1000,
-        description="Maximum allowed gap percentage"
+        default=30.0, ge=0, le=1000, description="Maximum allowed gap percentage"
     )
 
     @field_validator("industry")
@@ -200,22 +197,22 @@ class CompareRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    before: List[MetricInput] = Field(
+    before: list[MetricInput] = Field(
         ...,
         min_length=1,
         max_length=MAX_METRICS_COUNT,
-        description="Metrics from before period"
+        description="Metrics from before period",
     )
-    after: List[MetricInput] = Field(
+    after: list[MetricInput] = Field(
         ...,
         min_length=1,
         max_length=MAX_METRICS_COUNT,
-        description="Metrics from after period"
+        description="Metrics from after period",
     )
     industry: str = Field(
         default="general",
         max_length=MAX_INDUSTRY_LENGTH,
-        description="Industry context"
+        description="Industry context",
     )
 
     @field_validator("industry")
@@ -229,6 +226,7 @@ class CompareRequest(BaseModel):
 
 class MetricAnalysis(BaseModel):
     """Single metric analysis result."""
+
     metric: str
     current_value: float
     benchmark_p50: Optional[float] = None
@@ -238,6 +236,7 @@ class MetricAnalysis(BaseModel):
 
 class Recommendation(BaseModel):
     """Single recommendation."""
+
     metric: str
     priority: str
     effort: str
@@ -247,45 +246,50 @@ class Recommendation(BaseModel):
 
 class AnalyzeResponse(BaseModel):
     """Response for analyze endpoint."""
+
     run_id: Optional[str] = None
     industry: str
     metrics_analyzed: int
     metrics_with_benchmarks: int
     overall_health: str
-    analysis: List[Dict[str, Any]]
-    recommendations: List[Dict[str, Any]]
+    analysis: list[dict[str, Any]]
+    recommendations: list[dict[str, Any]]
     timestamp: str
 
 
 class HealthCheckResponse(BaseModel):
     """Response for health check endpoint."""
+
     passed: bool
     overall_health: str
     high_priority_count: int
     max_gap_found: float
-    violations: List[str]
+    violations: list[str]
     timestamp: str
 
 
 class CompareResponse(BaseModel):
     """Response for compare endpoint."""
+
     industry: str
     metrics_compared: int
-    improvements: List[Dict[str, Any]]
-    regressions: List[Dict[str, Any]]
-    unchanged: List[Dict[str, Any]]
-    summary: Dict[str, Any]
+    improvements: list[dict[str, Any]]
+    regressions: list[dict[str, Any]]
+    unchanged: list[dict[str, Any]]
+    summary: dict[str, Any]
 
 
 class IndustryInfo(BaseModel):
     """Industry information."""
+
     name: str
-    metrics: List[str]
+    metrics: list[str]
     metric_count: int
 
 
 class ServerInfo(BaseModel):
     """Server information response."""
+
     version: str
     status: str
     uptime_seconds: float
@@ -294,6 +298,7 @@ class ServerInfo(BaseModel):
 
 class HistoryListItem(BaseModel):
     """Single history list item."""
+
     run_id: str
     project: Optional[str]
     industry: str
@@ -304,16 +309,18 @@ class HistoryListItem(BaseModel):
 
 class TrendSummaryResponse(BaseModel):
     """Trend summary response."""
+
     total_analyses: int
     metrics_tracked: int
     improving: int
     declining: int
     stable: int
-    trends: List[Dict[str, Any]]
+    trends: list[dict[str, Any]]
 
 
 class ErrorResponse(BaseModel):
     """Error response model."""
+
     error: str
     detail: Optional[str] = None
     request_id: Optional[str] = None
@@ -322,6 +329,7 @@ class ErrorResponse(BaseModel):
 # ============================================================================
 # Rate Limiting (Simple In-Memory)
 # ============================================================================
+
 
 class RateLimiter:
     """
@@ -344,7 +352,7 @@ class RateLimiter:
         self.window = window
         self.max_clients = max_clients
         # OrderedDict for LRU eviction (oldest entries first)
-        self.requests: OrderedDict[str, List[float]] = OrderedDict()
+        self.requests: OrderedDict[str, list[float]] = OrderedDict()
 
     def is_allowed(self, client_id: str) -> bool:
         """Check if request is allowed for client."""
@@ -355,8 +363,7 @@ class RateLimiter:
             # Move to end (most recently used)
             self.requests.move_to_end(client_id)
             self.requests[client_id] = [
-                ts for ts in self.requests[client_id]
-                if now - ts < self.window
+                ts for ts in self.requests[client_id] if now - ts < self.window
             ]
         else:
             # New client - evict oldest if at capacity
@@ -397,6 +404,7 @@ class RateLimiter:
 # Application State
 # ============================================================================
 
+
 class AppState:
     """Application state container."""
 
@@ -404,13 +412,15 @@ class AppState:
         self.start_time: float = time.time()
         self.config: ProjectConfig = ProjectConfig()
         self.rate_limiter: RateLimiter = RateLimiter()
-        self.benchmarks: Dict[str, Any] = {}
+        self.benchmarks: dict[str, Any] = {}
         self._storage: Optional[MetricsStorage] = None
 
     def get_storage(self) -> MetricsStorage:
         """Get or create storage instance."""
         if self._storage is None:
-            storage_path = Path(self.config.storage_path) if self.config.storage_path else None
+            storage_path = (
+                Path(self.config.storage_path) if self.config.storage_path else None
+            )
             self._storage = MetricsStorage(db_path=storage_path)
         return self._storage
 
@@ -435,6 +445,7 @@ app_state = AppState()
 # ============================================================================
 # Application Lifecycle
 # ============================================================================
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -463,9 +474,10 @@ async def lifespan(app: FastAPI):
 # FastAPI Application
 # ============================================================================
 
+
 def create_app(
     enable_cors: bool = True,
-    cors_origins: List[str] = None,
+    cors_origins: list[str] = None,
     rate_limit: Optional[int] = DEFAULT_RATE_LIMIT,
 ) -> FastAPI:
     """
@@ -497,7 +509,9 @@ def create_app(
     # For production with authentication, specify explicit origins
     if enable_cors:
         origins = cors_origins or ["*"]
-        use_credentials = origins != ["*"]  # Only allow credentials with explicit origins
+        use_credentials = origins != [
+            "*"
+        ]  # Only allow credentials with explicit origins
         app.add_middleware(
             CORSMiddleware,
             allow_origins=origins,
@@ -616,7 +630,7 @@ async def get_server_info():
     )
 
 
-@api_router.get("/industries", response_model=List[IndustryInfo], tags=["Benchmarks"])
+@api_router.get("/industries", response_model=list[IndustryInfo], tags=["Benchmarks"])
 async def list_industries():
     """
     List available industries with benchmarks.
@@ -630,11 +644,13 @@ async def list_industries():
     industries = []
     for name, metrics in sorted(app_state.benchmarks.items()):
         metric_names = list(metrics.keys())
-        industries.append(IndustryInfo(
-            name=name,
-            metrics=metric_names,
-            metric_count=len(metric_names),
-        ))
+        industries.append(
+            IndustryInfo(
+                name=name,
+                metrics=metric_names,
+                metric_count=len(metric_names),
+            )
+        )
 
     return industries
 
@@ -645,7 +661,7 @@ async def get_industry_benchmarks(
         ...,
         max_length=MAX_INDUSTRY_LENGTH,
         pattern=r"^[a-zA-Z][a-zA-Z0-9_-]*$",
-        description="Industry name"
+        description="Industry name",
     )
 ):
     """
@@ -664,7 +680,7 @@ async def get_industry_benchmarks(
             "benchmarks": benchmarks,
         }
     except BenchmarkError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @api_router.post("/analyze", response_model=AnalyzeResponse, tags=["Analysis"])
@@ -718,7 +734,7 @@ async def analyze_metrics(request: AnalyzeRequest):
                 storage = app_state.get_storage()
                 run_id = storage.store_analysis(
                     full_results,
-                    project=request.project or app_state.config.project_name
+                    project=request.project or app_state.config.project_name,
                 )
                 logger.info(f"Stored analysis with run_id={run_id}")
             except StorageError as e:
@@ -736,9 +752,9 @@ async def analyze_metrics(request: AnalyzeRequest):
         )
 
     except BenchmarkError as e:
-        raise HTTPException(status_code=400, detail=f"Benchmark error: {e}")
+        raise HTTPException(status_code=400, detail=f"Benchmark error: {e}") from e
     except AnalysisError as e:
-        raise HTTPException(status_code=400, detail=f"Analysis error: {e}")
+        raise HTTPException(status_code=400, detail=f"Analysis error: {e}") from e
 
 
 @api_router.post("/health-check", response_model=HealthCheckResponse, tags=["Analysis"])
@@ -789,9 +805,9 @@ async def health_check(request: HealthCheckRequest):
         )
 
     except BenchmarkError as e:
-        raise HTTPException(status_code=400, detail=f"Benchmark error: {e}")
+        raise HTTPException(status_code=400, detail=f"Benchmark error: {e}") from e
     except AnalysisError as e:
-        raise HTTPException(status_code=400, detail=f"Analysis error: {e}")
+        raise HTTPException(status_code=400, detail=f"Analysis error: {e}") from e
 
 
 @api_router.post("/compare", response_model=CompareResponse, tags=["Analysis"])
@@ -873,10 +889,10 @@ async def compare_metrics(request: CompareRequest):
         )
 
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Comparison error: {e}")
+        raise HTTPException(status_code=400, detail=f"Comparison error: {e}") from e
 
 
-@api_router.get("/history", response_model=List[HistoryListItem], tags=["History"])
+@api_router.get("/history", response_model=list[HistoryListItem], tags=["History"])
 async def list_history(
     project: Optional[str] = Query(None, max_length=MAX_PROJECT_NAME_LENGTH),
     industry: Optional[str] = Query(None, max_length=MAX_INDUSTRY_LENGTH),
@@ -909,7 +925,7 @@ async def list_history(
         ]
 
     except StorageError as e:
-        raise HTTPException(status_code=500, detail=f"Storage error: {e}")
+        raise HTTPException(status_code=500, detail=f"Storage error: {e}") from e
 
 
 @api_router.get("/history/{run_id}", tags=["History"])
@@ -942,7 +958,7 @@ async def get_history_record(run_id: str):
         }
 
     except StorageError as e:
-        raise HTTPException(status_code=500, detail=f"Storage error: {e}")
+        raise HTTPException(status_code=500, detail=f"Storage error: {e}") from e
 
 
 @api_router.delete("/history/cleanup", tags=["History"])
@@ -966,7 +982,7 @@ async def cleanup_history(
         }
 
     except StorageError as e:
-        raise HTTPException(status_code=500, detail=f"Storage error: {e}")
+        raise HTTPException(status_code=500, detail=f"Storage error: {e}") from e
 
 
 @api_router.get("/trends", response_model=TrendSummaryResponse, tags=["Trends"])
@@ -994,7 +1010,7 @@ async def get_trends(
         )
 
     except StorageError as e:
-        raise HTTPException(status_code=500, detail=f"Storage error: {e}")
+        raise HTTPException(status_code=500, detail=f"Storage error: {e}") from e
 
 
 @api_router.get("/metrics/{metric_name}/history", tags=["Trends"])
@@ -1027,7 +1043,7 @@ async def get_metric_history(
         return history.to_dict()
 
     except StorageError as e:
-        raise HTTPException(status_code=500, detail=f"Storage error: {e}")
+        raise HTTPException(status_code=500, detail=f"Storage error: {e}") from e
 
 
 @api_router.get("/stats", tags=["Server"])
@@ -1044,7 +1060,7 @@ async def get_storage_stats():
         return stats
 
     except StorageError as e:
-        raise HTTPException(status_code=500, detail=f"Storage error: {e}")
+        raise HTTPException(status_code=500, detail=f"Storage error: {e}") from e
 
 
 # ============================================================================

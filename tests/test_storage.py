@@ -1,16 +1,15 @@
 """Tests for the storage module."""
 
 import tempfile
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 from goodai_metrics.storage import (
-    MetricsStorage,
     AnalysisRecord,
     MetricHistory,
-    StorageError,
+    MetricsStorage,
 )
 
 
@@ -61,13 +60,13 @@ class TestMetricsStorage:
 
     def test_storage_creates_database(self, temp_db):
         """Storage creates database file on initialization."""
-        storage = MetricsStorage(db_path=temp_db)
+        MetricsStorage(db_path=temp_db)
         assert temp_db.exists()
 
     def test_storage_creates_parent_directory(self, temp_db):
         """Storage creates parent directory if needed."""
         nested_path = temp_db.parent / "subdir" / "test.db"
-        storage = MetricsStorage(db_path=nested_path)
+        MetricsStorage(db_path=nested_path)
         assert nested_path.parent.exists()
 
     def test_store_analysis_returns_run_id(self, storage, sample_results):
@@ -299,11 +298,7 @@ class TestRegressionDetection:
 
     def test_detect_regressions_no_previous(self, storage):
         """detect_regressions returns empty when no previous analysis."""
-        current = {
-            "analysis": [
-                {"metric": "accuracy", "gap_percent": 15}
-            ]
-        }
+        current = {"analysis": [{"metric": "accuracy", "gap_percent": 15}]}
 
         regressions = storage.detect_regressions(current)
         assert regressions == []
@@ -356,11 +351,15 @@ class TestRegressionDetection:
         }
 
         # With default threshold (10%), should not detect
-        regressions = storage.detect_regressions(current, project="test", threshold_percent=10.0)
+        regressions = storage.detect_regressions(
+            current, project="test", threshold_percent=10.0
+        )
         assert len(regressions) == 0
 
         # With lower threshold (3%), should detect
-        regressions = storage.detect_regressions(current, project="test", threshold_percent=3.0)
+        regressions = storage.detect_regressions(
+            current, project="test", threshold_percent=3.0
+        )
         assert len(regressions) == 1
 
 
@@ -398,9 +397,7 @@ class TestStorageCleanup:
         results = {
             "industry": "manufacturing",
             "metrics_analyzed": 1,
-            "analysis": [
-                {"metric": "accuracy", "current_value": 0.8}
-            ],
+            "analysis": [{"metric": "accuracy", "current_value": 0.8}],
             "recommendations": [],
             "overall_health": "HEALTHY",
         }

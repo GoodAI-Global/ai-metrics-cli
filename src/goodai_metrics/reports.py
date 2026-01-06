@@ -9,11 +9,12 @@ import io
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any, Optional
 
 
 class ReportError(Exception):
     """Raised when report generation fails."""
+
     pass
 
 
@@ -39,7 +40,9 @@ def _validate_output_path(filepath: Path) -> None:
 
     # Validate extension
     if filepath.suffix.lower() != ".pdf":
-        raise ReportError(f"Output file must have .pdf extension, got: {filepath.suffix}")
+        raise ReportError(
+            f"Output file must have .pdf extension, got: {filepath.suffix}"
+        )
 
     # Check parent directory exists and is writable
     parent = filepath.parent
@@ -57,11 +60,11 @@ def _sanitize_text(text: str, max_length: int = 1000) -> str:
         return ""
 
     # Remove control characters except newlines and tabs
-    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", text)
 
     # Limit length
     if len(text) > max_length:
-        text = text[:max_length - 3] + "..."
+        text = text[: max_length - 3] + "..."
 
     return text
 
@@ -79,12 +82,12 @@ def _check_reportlab_available() -> None:
         raise ReportError(
             "PDF report generation requires reportlab. "
             "Install with: pip install goodai-metrics[reports]"
-        )
+        ) from None
 
 
 def generate_pdf_report(
-    analysis_results: Dict[str, Any],
-    recommendations: List[Dict[str, Any]],
+    analysis_results: dict[str, Any],
+    recommendations: list[dict[str, Any]],
     overall_health: str,
     output_path: Path,
     title: Optional[str] = None,
@@ -152,12 +155,12 @@ def generate_pdf_report(
     except ReportError:
         raise
     except Exception as e:
-        raise ReportError(f"Failed to generate PDF report: {e}")
+        raise ReportError(f"Failed to generate PDF report: {e}") from e
 
 
 def _build_pdf_report(
-    analysis_results: Dict[str, Any],
-    recommendations: List[Dict[str, Any]],
+    analysis_results: dict[str, Any],
+    recommendations: list[dict[str, Any]],
     overall_health: str,
     title: str,
     description: str,
@@ -170,14 +173,19 @@ def _build_pdf_report(
         PDF content as bytes.
     """
     from reportlab.lib import colors
-    from reportlab.lib.pagesizes import letter, A4
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
     from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-        PageBreak, HRFlowable
+        HRFlowable,
+        PageBreak,
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
     )
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 
     buffer = io.BytesIO()
 
@@ -195,35 +203,35 @@ def _build_pdf_report(
     styles = getSampleStyleSheet()
 
     title_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Heading1'],
+        "CustomTitle",
+        parent=styles["Heading1"],
         fontSize=24,
         spaceAfter=12,
         alignment=TA_CENTER,
-        textColor=colors.HexColor('#1a1a2e'),
+        textColor=colors.HexColor("#1a1a2e"),
     )
 
     subtitle_style = ParagraphStyle(
-        'CustomSubtitle',
-        parent=styles['Heading2'],
+        "CustomSubtitle",
+        parent=styles["Heading2"],
         fontSize=14,
         spaceAfter=6,
         alignment=TA_CENTER,
-        textColor=colors.HexColor('#4a4a6a'),
+        textColor=colors.HexColor("#4a4a6a"),
     )
 
     heading_style = ParagraphStyle(
-        'CustomHeading',
-        parent=styles['Heading2'],
+        "CustomHeading",
+        parent=styles["Heading2"],
         fontSize=16,
         spaceBefore=18,
         spaceAfter=12,
-        textColor=colors.HexColor('#1a1a2e'),
+        textColor=colors.HexColor("#1a1a2e"),
     )
 
     body_style = ParagraphStyle(
-        'CustomBody',
-        parent=styles['Normal'],
+        "CustomBody",
+        parent=styles["Normal"],
         fontSize=10,
         spaceAfter=6,
         leading=14,
@@ -238,13 +246,16 @@ def _build_pdf_report(
     if project_name:
         story.append(Paragraph(f"Project: {project_name}", subtitle_style))
 
-    story.append(Paragraph(
-        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        subtitle_style
-    ))
+    story.append(
+        Paragraph(
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", subtitle_style
+        )
+    )
 
     story.append(Spacer(1, 0.25 * inch))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#e0e0e0')))
+    story.append(
+        HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e0e0e0"))
+    )
     story.append(Spacer(1, 0.25 * inch))
 
     # Description if provided
@@ -259,28 +270,35 @@ def _build_pdf_report(
         ["Industry", analysis_results.get("industry", "N/A")],
         ["Metrics Analyzed", str(analysis_results.get("metrics_analyzed", 0))],
         ["With Benchmarks", str(analysis_results.get("metrics_with_benchmarks", 0))],
-        ["High Priority Gaps", str(sum(1 for r in recommendations if r.get("priority") == "HIGH"))],
+        [
+            "High Priority Gaps",
+            str(sum(1 for r in recommendations if r.get("priority") == "HIGH")),
+        ],
         ["Overall Health", overall_health],
     ]
 
     summary_table = Table(summary_data, colWidths=[2.5 * inch, 4 * inch])
-    summary_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f5f5f5')),
-        ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#333333')),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('TOPPADDING', (0, 0), (-1, -1), 8),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dddddd')),
-    ]))
+    summary_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f5f5f5")),
+                ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#333333")),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#dddddd")),
+            ]
+        )
+    )
     story.append(summary_table)
     story.append(Spacer(1, 0.25 * inch))
 
     # Health status indicator
     health_color = _get_health_color(overall_health)
     health_style = ParagraphStyle(
-        'HealthStatus',
+        "HealthStatus",
         parent=body_style,
         fontSize=14,
         textColor=health_color,
@@ -299,27 +317,38 @@ def _build_pdf_report(
         low_priority = [r for r in recommendations if r.get("priority") == "LOW"]
 
         if high_priority:
-            story.append(Paragraph(
-                "<font color='#dc3545'><b>High Priority</b></font>",
-                body_style
-            ))
-            story.append(_build_recommendations_table(high_priority, colors.HexColor('#dc3545')))
+            story.append(
+                Paragraph(
+                    "<font color='#dc3545'><b>High Priority</b></font>", body_style
+                )
+            )
+            story.append(
+                _build_recommendations_table(high_priority, colors.HexColor("#dc3545"))
+            )
             story.append(Spacer(1, 0.2 * inch))
 
         if medium_priority:
-            story.append(Paragraph(
-                "<font color='#ffc107'><b>Medium Priority</b></font>",
-                body_style
-            ))
-            story.append(_build_recommendations_table(medium_priority, colors.HexColor('#ffc107')))
+            story.append(
+                Paragraph(
+                    "<font color='#ffc107'><b>Medium Priority</b></font>", body_style
+                )
+            )
+            story.append(
+                _build_recommendations_table(
+                    medium_priority, colors.HexColor("#ffc107")
+                )
+            )
             story.append(Spacer(1, 0.2 * inch))
 
         if low_priority:
-            story.append(Paragraph(
-                "<font color='#28a745'><b>Low Priority</b></font>",
-                body_style
-            ))
-            story.append(_build_recommendations_table(low_priority, colors.HexColor('#28a745')))
+            story.append(
+                Paragraph(
+                    "<font color='#28a745'><b>Low Priority</b></font>", body_style
+                )
+            )
+            story.append(
+                _build_recommendations_table(low_priority, colors.HexColor("#28a745"))
+            )
             story.append(Spacer(1, 0.2 * inch))
 
     # Detailed Analysis (if we have data)
@@ -337,29 +366,35 @@ def _build_pdf_report(
     if without_benchmarks:
         story.append(Spacer(1, 0.25 * inch))
         story.append(Paragraph("Metrics Without Benchmarks", heading_style))
-        story.append(Paragraph(
-            "The following metrics were analyzed but have no industry benchmarks available:",
-            body_style
-        ))
+        story.append(
+            Paragraph(
+                "The following metrics were analyzed but have no industry benchmarks available:",
+                body_style,
+            )
+        )
         for metric in without_benchmarks[:50]:  # Limit display
             story.append(Paragraph(f"  - {_sanitize_text(metric, 100)}", body_style))
 
     # Footer
     story.append(Spacer(1, 0.5 * inch))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#e0e0e0')))
+    story.append(
+        HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e0e0e0"))
+    )
     story.append(Spacer(1, 0.1 * inch))
 
     footer_style = ParagraphStyle(
-        'Footer',
+        "Footer",
         parent=body_style,
         fontSize=8,
-        textColor=colors.HexColor('#888888'),
+        textColor=colors.HexColor("#888888"),
         alignment=TA_CENTER,
     )
-    story.append(Paragraph(
-        "Generated by Good AI Metrics CLI | Evidence over opinions. Leverage, not lore.",
-        footer_style
-    ))
+    story.append(
+        Paragraph(
+            "Generated by Good AI Metrics CLI | Evidence over opinions. Leverage, not lore.",
+            footer_style,
+        )
+    )
 
     # Build PDF
     doc.build(story)
@@ -368,7 +403,7 @@ def _build_pdf_report(
 
 
 def _build_recommendations_table(
-    recommendations: List[Dict[str, Any]],
+    recommendations: list[dict[str, Any]],
     priority_color: Any,
 ) -> Any:
     """Build a table of recommendations."""
@@ -379,32 +414,45 @@ def _build_recommendations_table(
     data = [["Metric", "Current", "Target (P50)", "Gap", "Action"]]
 
     for rec in recommendations:
-        data.append([
-            _sanitize_text(rec.get("metric", ""), 50),
-            f"{rec.get('current_value', 'N/A')}",
-            f"{rec.get('benchmark_p50', 'N/A')}",
-            f"{rec.get('gap_percent', 0):.1f}%",
-            _sanitize_text(rec.get("recommendation", "")[:60], 60),
-        ])
+        data.append(
+            [
+                _sanitize_text(rec.get("metric", ""), 50),
+                f"{rec.get('current_value', 'N/A')}",
+                f"{rec.get('benchmark_p50', 'N/A')}",
+                f"{rec.get('gap_percent', 0):.1f}%",
+                _sanitize_text(rec.get("recommendation", "")[:60], 60),
+            ]
+        )
 
-    table = Table(data, colWidths=[1.3 * inch, 0.8 * inch, 0.9 * inch, 0.6 * inch, 2.9 * inch])
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f0f0f0')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#333333')),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('ALIGN', (1, 1), (3, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ('TOPPADDING', (0, 0), (-1, -1), 6),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dddddd')),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fafafa')]),
-    ]))
+    table = Table(
+        data, colWidths=[1.3 * inch, 0.8 * inch, 0.9 * inch, 0.6 * inch, 2.9 * inch]
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#333333")),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("ALIGN", (1, 1), (3, -1), "CENTER"),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#dddddd")),
+                (
+                    "ROWBACKGROUNDS",
+                    (0, 1),
+                    (-1, -1),
+                    [colors.white, colors.HexColor("#fafafa")],
+                ),
+            ]
+        )
+    )
 
     return table
 
 
-def _build_metric_detail(metric_analysis: Dict[str, Any], style: Any) -> Any:
+def _build_metric_detail(metric_analysis: dict[str, Any], style: Any) -> Any:
     """Build a paragraph with metric details."""
     from reportlab.platypus import Paragraph
 
@@ -429,15 +477,15 @@ def _get_health_color(health: str) -> Any:
     from reportlab.lib import colors
 
     health_colors = {
-        "HEALTHY": colors.HexColor('#28a745'),
-        "NEEDS_ATTENTION": colors.HexColor('#ffc107'),
-        "CRITICAL": colors.HexColor('#dc3545'),
+        "HEALTHY": colors.HexColor("#28a745"),
+        "NEEDS_ATTENTION": colors.HexColor("#ffc107"),
+        "CRITICAL": colors.HexColor("#dc3545"),
     }
-    return health_colors.get(health.upper(), colors.HexColor('#6c757d'))
+    return health_colors.get(health.upper(), colors.HexColor("#6c757d"))
 
 
 def generate_comparison_pdf_report(
-    comparison_results: Dict[str, Any],
+    comparison_results: dict[str, Any],
     output_path: Path,
     title: Optional[str] = None,
     project_name: Optional[str] = None,
@@ -493,23 +541,28 @@ def generate_comparison_pdf_report(
     except ReportError:
         raise
     except Exception as e:
-        raise ReportError(f"Failed to generate comparison PDF: {e}")
+        raise ReportError(f"Failed to generate comparison PDF: {e}") from e
 
 
 def _build_comparison_pdf(
-    comparison_results: Dict[str, Any],
+    comparison_results: dict[str, Any],
     title: str,
     project_name: str,
 ) -> bytes:
     """Build comparison PDF content."""
     from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
     from reportlab.lib.pagesizes import letter
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
     from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+        HRFlowable,
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
     )
-    from reportlab.lib.enums import TA_CENTER
 
     buffer = io.BytesIO()
 
@@ -525,26 +578,26 @@ def _build_comparison_pdf(
     styles = getSampleStyleSheet()
 
     title_style = ParagraphStyle(
-        'Title',
-        parent=styles['Heading1'],
+        "Title",
+        parent=styles["Heading1"],
         fontSize=24,
         spaceAfter=12,
         alignment=TA_CENTER,
-        textColor=colors.HexColor('#1a1a2e'),
+        textColor=colors.HexColor("#1a1a2e"),
     )
 
     heading_style = ParagraphStyle(
-        'Heading',
-        parent=styles['Heading2'],
+        "Heading",
+        parent=styles["Heading2"],
         fontSize=16,
         spaceBefore=18,
         spaceAfter=12,
-        textColor=colors.HexColor('#1a1a2e'),
+        textColor=colors.HexColor("#1a1a2e"),
     )
 
     body_style = ParagraphStyle(
-        'Body',
-        parent=styles['Normal'],
+        "Body",
+        parent=styles["Normal"],
         fontSize=10,
         spaceAfter=6,
     )
@@ -555,12 +608,15 @@ def _build_comparison_pdf(
     story.append(Paragraph(title, title_style))
     if project_name:
         story.append(Paragraph(f"Project: {project_name}", body_style))
-    story.append(Paragraph(
-        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        body_style
-    ))
+    story.append(
+        Paragraph(
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", body_style
+        )
+    )
     story.append(Spacer(1, 0.25 * inch))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#e0e0e0')))
+    story.append(
+        HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e0e0e0"))
+    )
     story.append(Spacer(1, 0.25 * inch))
 
     # Summary
@@ -576,14 +632,18 @@ def _build_comparison_pdf(
     ]
 
     summary_table = Table(summary_data, colWidths=[2.5 * inch, 4 * inch])
-    summary_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f5f5f5')),
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('TOPPADDING', (0, 0), (-1, -1), 8),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dddddd')),
-    ]))
+    summary_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f5f5f5")),
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#dddddd")),
+            ]
+        )
+    )
     story.append(summary_table)
     story.append(Spacer(1, 0.25 * inch))
 
@@ -598,42 +658,55 @@ def _build_comparison_pdf(
             if comp.get("direction") == "unchanged":
                 status = "Unchanged"
 
-            comp_data.append([
-                _sanitize_text(comp.get("metric", ""), 40),
-                f"{comp.get('before_value', 'N/A')}",
-                f"{comp.get('after_value', 'N/A')}",
-                f"{comp.get('change_percent', 0):+.1f}%",
-                status,
-            ])
+            comp_data.append(
+                [
+                    _sanitize_text(comp.get("metric", ""), 40),
+                    f"{comp.get('before_value', 'N/A')}",
+                    f"{comp.get('after_value', 'N/A')}",
+                    f"{comp.get('change_percent', 0):+.1f}%",
+                    status,
+                ]
+            )
 
-        comp_table = Table(comp_data, colWidths=[2 * inch, 1.2 * inch, 1.2 * inch, 1 * inch, 1.1 * inch])
-        comp_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f0f0f0')),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dddddd')),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fafafa')]),
-        ]))
+        comp_table = Table(
+            comp_data,
+            colWidths=[2 * inch, 1.2 * inch, 1.2 * inch, 1 * inch, 1.1 * inch],
+        )
+        comp_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#dddddd")),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 1),
+                        (-1, -1),
+                        [colors.white, colors.HexColor("#fafafa")],
+                    ),
+                ]
+            )
+        )
         story.append(comp_table)
 
     # Footer
     story.append(Spacer(1, 0.5 * inch))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#e0e0e0')))
+    story.append(
+        HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e0e0e0"))
+    )
 
     footer_style = ParagraphStyle(
-        'Footer',
+        "Footer",
         parent=body_style,
         fontSize=8,
-        textColor=colors.HexColor('#888888'),
+        textColor=colors.HexColor("#888888"),
         alignment=TA_CENTER,
     )
-    story.append(Paragraph(
-        "Generated by Good AI Metrics CLI",
-        footer_style
-    ))
+    story.append(Paragraph("Generated by Good AI Metrics CLI", footer_style))
 
     doc.build(story)
     return buffer.getvalue()

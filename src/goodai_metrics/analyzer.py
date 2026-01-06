@@ -5,31 +5,32 @@ Loads CSV data, validates columns, and compares against industry benchmarks.
 """
 
 import csv
-from pathlib import Path
-from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Optional
 
 from .benchmarks import (
-    load_benchmarks,
-    load_benchmarks_with_custom,
     get_benchmark_for_industry,
     get_percentile_rank,
-    BenchmarkError,
+    load_benchmarks,
+    load_benchmarks_with_custom,
 )
 
 # Import consolidated utility functions (single source of truth)
 # Note: Imported here to avoid duplication; recommendations.py is the authoritative source
-from .recommendations import is_higher_better, calculate_gap
+from .recommendations import calculate_gap, is_higher_better
 
 
 class AnalysisError(Exception):
     """Raised when metrics analysis fails."""
+
     pass
 
 
 @dataclass
 class MetricValue:
     """A single metric measurement."""
+
     name: str
     value: float
     timestamp: Optional[str] = None
@@ -48,8 +49,8 @@ class MetricsAnalyzer:
     def __init__(
         self,
         industry: str = "general",
-        custom_benchmarks: Optional[Dict[str, Dict[str, Any]]] = None,
-        benchmark_files: Optional[List[Path]] = None,
+        custom_benchmarks: Optional[dict[str, dict[str, Any]]] = None,
+        benchmark_files: Optional[list[Path]] = None,
     ):
         """
         Initialize analyzer for a specific industry.
@@ -66,7 +67,7 @@ class MetricsAnalyzer:
         self._industry_benchmarks = None
 
     @property
-    def benchmarks(self) -> Dict:
+    def benchmarks(self) -> dict:
         """Lazy-load benchmarks, including any custom sources."""
         if self._benchmarks is None:
             if self._custom_benchmarks or self._benchmark_files:
@@ -82,7 +83,7 @@ class MetricsAnalyzer:
         return self._benchmarks
 
     @property
-    def industry_benchmarks(self) -> Dict:
+    def industry_benchmarks(self) -> dict:
         """Get benchmarks for the configured industry."""
         if self._industry_benchmarks is None:
             self._industry_benchmarks = get_benchmark_for_industry(
@@ -90,7 +91,7 @@ class MetricsAnalyzer:
             )
         return self._industry_benchmarks
 
-    def load_csv(self, filepath: Path) -> List[MetricValue]:
+    def load_csv(self, filepath: Path) -> list[MetricValue]:
         """
         Load metrics from CSV file.
 
@@ -112,7 +113,7 @@ class MetricsAnalyzer:
             raise AnalysisError(f"Expected CSV file, got: {filepath.suffix}")
 
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
+            with open(filepath, encoding="utf-8") as f:
                 reader = csv.DictReader(f)
 
                 if reader.fieldnames is None:
@@ -135,13 +136,15 @@ class MetricsAnalyzer:
                         raise AnalysisError(
                             f"Invalid value on row {row_num}: '{row.get('value')}' "
                             "is not a number"
-                        )
+                        ) from None
 
-                    metrics.append(MetricValue(
-                        name=row["metric"].strip(),
-                        value=value,
-                        timestamp=row.get("timestamp", "").strip() or None
-                    ))
+                    metrics.append(
+                        MetricValue(
+                            name=row["metric"].strip(),
+                            value=value,
+                            timestamp=row.get("timestamp", "").strip() or None,
+                        )
+                    )
 
                 if not metrics:
                     raise AnalysisError("CSV file contains no data rows")
@@ -149,9 +152,9 @@ class MetricsAnalyzer:
                 return metrics
 
         except csv.Error as e:
-            raise AnalysisError(f"CSV parsing error: {e}")
+            raise AnalysisError(f"CSV parsing error: {e}") from e
 
-    def analyze(self, metrics: List[MetricValue]) -> Dict[str, Any]:
+    def analyze(self, metrics: list[MetricValue]) -> dict[str, Any]:
         """
         Analyze metrics against industry benchmarks.
 
@@ -166,7 +169,7 @@ class MetricsAnalyzer:
             "metrics_analyzed": 0,
             "metrics_with_benchmarks": 0,
             "metrics_without_benchmarks": [],
-            "analysis": []
+            "analysis": [],
         }
 
         for metric in metrics:
@@ -183,7 +186,7 @@ class MetricsAnalyzer:
 
         return results
 
-    def analyze_dict(self, metrics: Dict[str, float]) -> Dict[str, Any]:
+    def analyze_dict(self, metrics: dict[str, float]) -> dict[str, Any]:
         """
         Analyze metrics from a dictionary.
 
@@ -196,12 +199,11 @@ class MetricsAnalyzer:
             Analysis results dictionary.
         """
         metric_values = [
-            MetricValue(name=name, value=value)
-            for name, value in metrics.items()
+            MetricValue(name=name, value=value) for name, value in metrics.items()
         ]
         return self.analyze(metric_values)
 
-    def _analyze_metric(self, metric: MetricValue, benchmark: Dict) -> Dict[str, Any]:
+    def _analyze_metric(self, metric: MetricValue, benchmark: dict) -> dict[str, Any]:
         """
         Analyze a single metric against its benchmark.
 
@@ -219,9 +221,7 @@ class MetricsAnalyzer:
         gap = calculate_gap(metric.value, benchmark["p50"], higher_better)
 
         # Determine percentile bracket using consolidated function
-        percentile_bracket = get_percentile_rank(
-            metric.value, benchmark, higher_better
-        )
+        percentile_bracket = get_percentile_rank(metric.value, benchmark, higher_better)
 
         return {
             "metric": metric.name,
@@ -235,16 +235,16 @@ class MetricsAnalyzer:
             "gap_percent": abs(gap) * 100,
             "percentile_bracket": percentile_bracket,
             "higher_is_better": higher_better,
-            "needs_improvement": gap > 0
+            "needs_improvement": gap > 0,
         }
 
 
 def analyze_metrics(
     filepath: Path,
     industry: str = "general",
-    custom_benchmarks: Optional[Dict[str, Dict[str, Any]]] = None,
-    benchmark_files: Optional[List[Path]] = None,
-) -> Dict[str, Any]:
+    custom_benchmarks: Optional[dict[str, dict[str, Any]]] = None,
+    benchmark_files: Optional[list[Path]] = None,
+) -> dict[str, Any]:
     """
     Convenience function to analyze metrics from a CSV file.
 
@@ -270,9 +270,9 @@ def compare_metrics(
     before_file: Path,
     after_file: Path,
     industry: str = "general",
-    custom_benchmarks: Optional[Dict[str, Dict[str, Any]]] = None,
-    benchmark_files: Optional[List[Path]] = None,
-) -> Dict[str, Any]:
+    custom_benchmarks: Optional[dict[str, dict[str, Any]]] = None,
+    benchmark_files: Optional[list[Path]] = None,
+) -> dict[str, Any]:
     """
     Compare metrics between two time periods.
 
@@ -321,14 +321,20 @@ def compare_metrics(
         else:
             improved = after_val < before_val
 
-        comparisons.append({
-            "metric": metric_name,
-            "before_value": before_val,
-            "after_value": after_val,
-            "change_percent": change_percent,
-            "improved": improved,
-            "direction": "up" if after_val > before_val else "down" if after_val < before_val else "unchanged"
-        })
+        comparisons.append(
+            {
+                "metric": metric_name,
+                "before_value": before_val,
+                "after_value": after_val,
+                "change_percent": change_percent,
+                "improved": improved,
+                "direction": (
+                    "up"
+                    if after_val > before_val
+                    else "down" if after_val < before_val else "unchanged"
+                ),
+            }
+        )
 
     return {
         "industry": industry,
@@ -338,7 +344,11 @@ def compare_metrics(
         "comparisons": comparisons,
         "summary": {
             "improved": sum(1 for c in comparisons if c["improved"]),
-            "declined": sum(1 for c in comparisons if not c["improved"] and c["direction"] != "unchanged"),
-            "unchanged": sum(1 for c in comparisons if c["direction"] == "unchanged")
-        }
+            "declined": sum(
+                1
+                for c in comparisons
+                if not c["improved"] and c["direction"] != "unchanged"
+            ),
+            "unchanged": sum(1 for c in comparisons if c["direction"] == "unchanged"),
+        },
     }

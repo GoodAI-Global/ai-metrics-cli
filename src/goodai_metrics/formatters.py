@@ -5,14 +5,14 @@ Supports JSON and text output formats.
 """
 
 import json
-from typing import Dict, Any, List
+from typing import Any
 
 
 def format_report_json(
-    analysis_results: Dict[str, Any],
-    recommendations: List[Dict[str, Any]],
+    analysis_results: dict[str, Any],
+    recommendations: list[dict[str, Any]],
     overall_health: str,
-    indent: int = 2
+    indent: int = 2,
 ) -> str:
     """
     Format analysis results as JSON.
@@ -34,20 +34,22 @@ def format_report_json(
             "metrics_analyzed": analysis_results["metrics_analyzed"],
             "metrics_with_benchmarks": analysis_results["metrics_with_benchmarks"],
             "high_priority_gaps": high_priority_count,
-            "overall_health": overall_health
+            "overall_health": overall_health,
         },
         "recommendations": recommendations,
         "detailed_analysis": analysis_results["analysis"],
-        "metrics_without_benchmarks": analysis_results.get("metrics_without_benchmarks", [])
+        "metrics_without_benchmarks": analysis_results.get(
+            "metrics_without_benchmarks", []
+        ),
     }
 
     return json.dumps(report, indent=indent)
 
 
 def format_report_text(
-    analysis_results: Dict[str, Any],
-    recommendations: List[Dict[str, Any]],
-    overall_health: str
+    analysis_results: dict[str, Any],
+    recommendations: list[dict[str, Any]],
+    overall_health: str,
 ) -> str:
     """
     Format analysis results as human-readable text.
@@ -73,7 +75,9 @@ def format_report_text(
     lines.append("-" * 40)
     lines.append(f"Industry:              {analysis_results['industry']}")
     lines.append(f"Metrics Analyzed:      {analysis_results['metrics_analyzed']}")
-    lines.append(f"With Benchmarks:       {analysis_results['metrics_with_benchmarks']}")
+    lines.append(
+        f"With Benchmarks:       {analysis_results['metrics_with_benchmarks']}"
+    )
 
     high_count = sum(1 for r in recommendations if r["priority"] == "HIGH")
     lines.append(f"High Priority Gaps:    {high_count}")
@@ -88,7 +92,9 @@ def format_report_text(
         for i, rec in enumerate(recommendations, 1):
             priority_indicator = _get_priority_indicator(rec["priority"])
             lines.append(f"\n{i}. [{priority_indicator}] {rec['metric']}")
-            lines.append(f"   Current: {rec['current_value']} | Benchmark: {rec['benchmark_p50']}")
+            lines.append(
+                f"   Current: {rec['current_value']} | Benchmark: {rec['benchmark_p50']}"
+            )
             lines.append(f"   Gap: {rec['gap_percent']:.1f}% | Effort: {rec['effort']}")
             lines.append(f"   > {rec['recommendation']}")
 
@@ -113,15 +119,11 @@ def format_report_text(
 
 def _get_priority_indicator(priority: str) -> str:
     """Get a visual indicator for priority level."""
-    indicators = {
-        "HIGH": "!!",
-        "MEDIUM": "! ",
-        "LOW": "  "
-    }
+    indicators = {"HIGH": "!!", "MEDIUM": "! ", "LOW": "  "}
     return indicators.get(priority, "  ")
 
 
-def format_health_check(health_result: Dict[str, Any]) -> str:
+def format_health_check(health_result: dict[str, Any]) -> str:
     """
     Format health check results for CI/CD output.
 
@@ -150,7 +152,7 @@ def format_health_check(health_result: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def format_comparison_json(comparison_results: Dict[str, Any], indent: int = 2) -> str:
+def format_comparison_json(comparison_results: dict[str, Any], indent: int = 2) -> str:
     """
     Format comparison results as JSON.
 
@@ -164,7 +166,7 @@ def format_comparison_json(comparison_results: Dict[str, Any], indent: int = 2) 
     return json.dumps(comparison_results, indent=indent)
 
 
-def format_comparison_text(comparison_results: Dict[str, Any]) -> str:
+def format_comparison_text(comparison_results: dict[str, Any]) -> str:
     """
     Format comparison results as human-readable text.
 
@@ -199,7 +201,9 @@ def format_comparison_text(comparison_results: Dict[str, Any]) -> str:
         lines.append("-" * 40)
 
         for comp in comparison_results["comparisons"]:
-            direction_symbol = _get_direction_symbol(comp["direction"], comp["improved"])
+            direction_symbol = _get_direction_symbol(
+                comp["direction"], comp["improved"]
+            )
             lines.append(
                 f"{direction_symbol} {comp['metric']}: "
                 f"{comp['before_value']} -> {comp['after_value']} "

@@ -15,17 +15,17 @@ Thread Safety:
 - Not suitable for high-concurrency write scenarios
 """
 
-import sqlite3
-import json
 import hashlib
-import uuid
+import json
 import logging
+import sqlite3
+import uuid
+from collections.abc import Generator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Generator
-from dataclasses import dataclass
-
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +39,14 @@ MAX_DAYS = 3650  # 10 years
 
 class StorageError(Exception):
     """Raised when storage operations fail."""
+
     pass
 
 
 @dataclass
 class AnalysisRecord:
     """A stored analysis result."""
+
     id: Optional[int]
     run_id: str
     project: Optional[str]
@@ -52,10 +54,10 @@ class AnalysisRecord:
     timestamp: datetime
     metrics_count: int
     overall_health: str
-    summary: Dict[str, Any]
-    full_results: Dict[str, Any]
+    summary: dict[str, Any]
+    full_results: dict[str, Any]
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary representation."""
         return {
             "id": self.id,
@@ -73,10 +75,11 @@ class AnalysisRecord:
 @dataclass
 class MetricHistory:
     """Historical values for a single metric."""
-    metric_name: str
-    values: List[Dict[str, Any]]
 
-    def to_dict(self) -> Dict[str, Any]:
+    metric_name: str
+    values: list[dict[str, Any]]
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary representation."""
         return {
             "metric_name": self.metric_name,
@@ -147,7 +150,9 @@ class MetricsStorage:
     DEFAULT_DB_NAME = ".goodai-metrics/history.db"
     DEFAULT_DB_TIMEOUT = 30.0  # seconds
 
-    def __init__(self, db_path: Optional[Path] = None, timeout: float = DEFAULT_DB_TIMEOUT):
+    def __init__(
+        self, db_path: Optional[Path] = None, timeout: float = DEFAULT_DB_TIMEOUT
+    ):
         """
         Initialize storage with database path.
 
@@ -176,17 +181,16 @@ class MetricsStorage:
         path_str = str(db_path)
 
         # Check for path traversal
-        if '..' in path_str:
+        if ".." in path_str:
             raise StorageError(f"Database path cannot contain '..': {path_str}")
 
         # If absolute path, must be within allowed directories
         if db_path.is_absolute():
             home = Path.home()
-            allowed_roots = [Path('/tmp'), home, Path('/var/tmp'), Path.cwd()]
+            allowed_roots = [Path("/tmp"), home, Path("/var/tmp"), Path.cwd()]
 
             is_allowed = any(
-                path_str.startswith(str(root.resolve()))
-                for root in allowed_roots
+                path_str.startswith(str(root.resolve())) for root in allowed_roots
             )
 
             if not is_allowed:
@@ -229,16 +233,20 @@ class MetricsStorage:
                 cursor.executescript(CREATE_TABLES_SQL)
                 cursor.execute(
                     "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
-                    (SCHEMA_VERSION, datetime.now(timezone.utc).isoformat())
+                    (SCHEMA_VERSION, datetime.now(timezone.utc).isoformat()),
                 )
 
-    def _generate_run_id(self, timestamp: datetime, industry: str, project: Optional[str]) -> str:
+    def _generate_run_id(
+        self, timestamp: datetime, industry: str, project: Optional[str]
+    ) -> str:
         """Generate a unique run ID with entropy for collision resistance."""
         # Include UUID4 for uniqueness even with identical timestamps
-        data = f"{timestamp.isoformat()}-{industry}-{project or 'default'}-{uuid.uuid4()}"
+        data = (
+            f"{timestamp.isoformat()}-{industry}-{project or 'default'}-{uuid.uuid4()}"
+        )
         return hashlib.sha256(data.encode()).hexdigest()[:16]
 
-    def _validate_results(self, results: Dict[str, Any]) -> None:
+    def _validate_results(self, results: dict[str, Any]) -> None:
         """Validate analysis results structure and content."""
         if not isinstance(results, dict):
             raise StorageError("Results must be a dictionary")
@@ -275,9 +283,9 @@ class MetricsStorage:
 
     def store_analysis(
         self,
-        results: Dict[str, Any],
+        results: dict[str, Any],
         project: Optional[str] = None,
-        timestamp: Optional[datetime] = None
+        timestamp: Optional[datetime] = None,
     ) -> str:
         """
         Store analysis results in the database.
@@ -301,7 +309,9 @@ class MetricsStorage:
             if not isinstance(project, str):
                 raise StorageError("Project must be a string")
             if len(project) > MAX_STRING_FIELD_SIZE:
-                raise StorageError(f"Project name exceeds {MAX_STRING_FIELD_SIZE} characters")
+                raise StorageError(
+                    f"Project name exceeds {MAX_STRING_FIELD_SIZE} characters"
+                )
 
         if timestamp is None:
             timestamp = datetime.now(timezone.utc)
@@ -349,13 +359,11 @@ class MetricsStorage:
                         results.get("overall_health", "unknown"),
                         json.dumps(summary),
                         json.dumps(results),
-                    )
+                    ),
                 )
 
                 # Delete any existing metric values for this run
-                cursor.execute(
-                    "DELETE FROM metric_values WHERE run_id = ?", (run_id,)
-                )
+                cursor.execute("DELETE FROM metric_values WHERE run_id = ?", (run_id,))
 
                 # Insert individual metric values
                 for analysis in analysis_list:
@@ -382,13 +390,13 @@ class MetricsStorage:
                             analysis.get("percentile_bracket"),
                             priority,
                             analysis.get("timestamp"),
-                        )
+                        ),
                     )
 
             return run_id
 
         except sqlite3.Error as e:
-            raise StorageError(f"Failed to store analysis: {e}")
+            raise StorageError(f"Failed to store analysis: {e}") from e
 
     def _parse_analysis_row(self, row: sqlite3.Row) -> AnalysisRecord:
         """Parse a database row into an AnalysisRecord with proper error handling."""
@@ -397,25 +405,21 @@ class MetricsStorage:
         # Parse timestamp with error handling
         try:
             timestamp = datetime.fromisoformat(row["timestamp"])
-        except (ValueError, TypeError) as e:
+        except (ValueError, TypeError):
             raise StorageError(
                 f"Invalid timestamp format for run {run_id}: {row['timestamp']}"
-            )
+            ) from None
 
         # Parse JSON with error handling
         try:
             summary = json.loads(row["summary_json"])
         except json.JSONDecodeError as e:
-            raise StorageError(
-                f"Corrupted summary JSON for run {run_id}: {e}"
-            )
+            raise StorageError(f"Corrupted summary JSON for run {run_id}: {e}") from e
 
         try:
             full_results = json.loads(row["full_results_json"])
         except json.JSONDecodeError as e:
-            raise StorageError(
-                f"Corrupted results JSON for run {run_id}: {e}"
-            )
+            raise StorageError(f"Corrupted results JSON for run {run_id}: {e}") from e
 
         return AnalysisRecord(
             id=row["id"],
@@ -454,7 +458,7 @@ class MetricsStorage:
                            metrics_count, overall_health, summary_json, full_results_json
                     FROM analysis_runs WHERE run_id = ?
                     """,
-                    (run_id,)
+                    (run_id,),
                 )
                 row = cursor.fetchone()
 
@@ -464,7 +468,7 @@ class MetricsStorage:
                 return self._parse_analysis_row(row)
 
         except sqlite3.Error as e:
-            raise StorageError(f"Failed to retrieve analysis: {e}")
+            raise StorageError(f"Failed to retrieve analysis: {e}") from e
 
     def list_analyses(
         self,
@@ -472,7 +476,7 @@ class MetricsStorage:
         industry: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> List[AnalysisRecord]:
+    ) -> list[AnalysisRecord]:
         """
         List analysis records with optional filtering.
 
@@ -508,7 +512,7 @@ class MetricsStorage:
                     FROM analysis_runs
                     WHERE 1=1
                 """
-                params: List[Any] = []
+                params: list[Any] = []
 
                 if project is not None:
                     query += " AND project = ?"
@@ -530,7 +534,7 @@ class MetricsStorage:
                 return records
 
         except sqlite3.Error as e:
-            raise StorageError(f"Failed to list analyses: {e}")
+            raise StorageError(f"Failed to list analyses: {e}") from e
 
     def get_metric_history(
         self,
@@ -572,7 +576,7 @@ class MetricsStorage:
                     WHERE mv.metric_name = ?
                     AND ar.timestamp >= datetime('now', ?)
                 """
-                params: List[Any] = [metric_name, f"-{days} days"]
+                params: list[Any] = [metric_name, f"-{days} days"]
 
                 if project is not None:
                     query += " AND ar.project = ?"
@@ -584,25 +588,27 @@ class MetricsStorage:
 
                 values = []
                 for row in cursor.fetchall():
-                    values.append({
-                        "value": row["current_value"],
-                        "benchmark_p50": row["benchmark_p50"],
-                        "gap_percent": row["gap_percent"],
-                        "percentile_bracket": row["percentile_bracket"],
-                        "priority": row["priority"],
-                        "timestamp": row["timestamp"],
-                    })
+                    values.append(
+                        {
+                            "value": row["current_value"],
+                            "benchmark_p50": row["benchmark_p50"],
+                            "gap_percent": row["gap_percent"],
+                            "percentile_bracket": row["percentile_bracket"],
+                            "priority": row["priority"],
+                            "timestamp": row["timestamp"],
+                        }
+                    )
 
                 return MetricHistory(metric_name=metric_name, values=values)
 
         except sqlite3.Error as e:
-            raise StorageError(f"Failed to get metric history: {e}")
+            raise StorageError(f"Failed to get metric history: {e}") from e
 
     def get_trend_summary(
         self,
         project: Optional[str] = None,
         days: int = 30,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get trend summary across all metrics.
 
@@ -624,7 +630,7 @@ class MetricsStorage:
                     JOIN analysis_runs ar ON mv.run_id = ar.run_id
                     WHERE ar.timestamp >= datetime('now', ?)
                 """
-                params: List[Any] = [f"-{days} days"]
+                params: list[Any] = [f"-{days} days"]
 
                 if project is not None:
                     metric_query += " AND ar.project = ?"
@@ -642,25 +648,33 @@ class MetricsStorage:
                         last_value = history.values[-1]["value"]
 
                         if first_value != 0:
-                            change_percent = ((last_value - first_value) / abs(first_value)) * 100
+                            change_percent = (
+                                (last_value - first_value) / abs(first_value)
+                            ) * 100
                         else:
                             change_percent = 100.0 if last_value != 0 else 0.0
 
-                        trends.append({
-                            "metric": metric_name,
-                            "first_value": first_value,
-                            "last_value": last_value,
-                            "change_percent": round(change_percent, 2),
-                            "direction": "improving" if change_percent > 0 else "declining" if change_percent < 0 else "stable",
-                            "data_points": len(history.values),
-                        })
+                        trends.append(
+                            {
+                                "metric": metric_name,
+                                "first_value": first_value,
+                                "last_value": last_value,
+                                "change_percent": round(change_percent, 2),
+                                "direction": (
+                                    "improving"
+                                    if change_percent > 0
+                                    else "declining" if change_percent < 0 else "stable"
+                                ),
+                                "data_points": len(history.values),
+                            }
+                        )
 
                 # Count analyses in period
                 count_query = """
                     SELECT COUNT(*) as count FROM analysis_runs
                     WHERE timestamp >= datetime('now', ?)
                 """
-                count_params: List[Any] = [f"-{days} days"]
+                count_params: list[Any] = [f"-{days} days"]
                 if project is not None:
                     count_query += " AND project = ?"
                     count_params.append(project)
@@ -674,20 +688,24 @@ class MetricsStorage:
                     "total_analyses": analysis_count,
                     "metrics_tracked": len(trends),
                     "trends": trends,
-                    "improving": sum(1 for t in trends if t["direction"] == "improving"),
-                    "declining": sum(1 for t in trends if t["direction"] == "declining"),
+                    "improving": sum(
+                        1 for t in trends if t["direction"] == "improving"
+                    ),
+                    "declining": sum(
+                        1 for t in trends if t["direction"] == "declining"
+                    ),
                     "stable": sum(1 for t in trends if t["direction"] == "stable"),
                 }
 
         except sqlite3.Error as e:
-            raise StorageError(f"Failed to get trend summary: {e}")
+            raise StorageError(f"Failed to get trend summary: {e}") from e
 
     def detect_regressions(
         self,
-        current_results: Dict[str, Any],
+        current_results: dict[str, Any],
         project: Optional[str] = None,
         threshold_percent: float = 10.0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Detect regressions compared to previous analysis.
 
@@ -718,7 +736,9 @@ class MetricsStorage:
 
             prev_results = previous[0].full_results
             prev_analysis = {a["metric"]: a for a in prev_results.get("analysis", [])}
-            curr_analysis = {a["metric"]: a for a in current_results.get("analysis", [])}
+            curr_analysis = {
+                a["metric"]: a for a in current_results.get("analysis", [])
+            }
 
             regressions = []
             for metric, curr in curr_analysis.items():
@@ -732,13 +752,15 @@ class MetricsStorage:
                 # Regression = gap increased significantly
                 gap_increase = curr_gap - prev_gap
                 if gap_increase >= threshold_percent:
-                    regressions.append({
-                        "metric": metric,
-                        "previous_gap_percent": round(prev_gap, 2),
-                        "current_gap_percent": round(curr_gap, 2),
-                        "gap_increase": round(gap_increase, 2),
-                        "severity": "HIGH" if gap_increase >= 20 else "MEDIUM",
-                    })
+                    regressions.append(
+                        {
+                            "metric": metric,
+                            "previous_gap_percent": round(prev_gap, 2),
+                            "current_gap_percent": round(curr_gap, 2),
+                            "gap_increase": round(gap_increase, 2),
+                            "severity": "HIGH" if gap_increase >= 20 else "MEDIUM",
+                        }
+                    )
 
             return regressions
 
@@ -775,7 +797,7 @@ class MetricsStorage:
                     SELECT COUNT(*) as count FROM analysis_runs
                     WHERE timestamp < datetime('now', ?)
                     """,
-                    (f"-{days} days",)
+                    (f"-{days} days",),
                 )
                 count = cursor.fetchone()["count"]
 
@@ -791,7 +813,7 @@ class MetricsStorage:
                         WHERE timestamp < datetime('now', ?)
                     )
                     """,
-                    (f"-{days} days",)
+                    (f"-{days} days",),
                 )
 
                 # Delete analysis runs
@@ -800,15 +822,15 @@ class MetricsStorage:
                     DELETE FROM analysis_runs
                     WHERE timestamp < datetime('now', ?)
                     """,
-                    (f"-{days} days",)
+                    (f"-{days} days",),
                 )
 
                 return count
 
         except sqlite3.Error as e:
-            raise StorageError(f"Failed to delete old records: {e}")
+            raise StorageError(f"Failed to delete old records: {e}") from e
 
-    def get_database_stats(self) -> Dict[str, Any]:
+    def get_database_stats(self) -> dict[str, Any]:
         """Get statistics about the database."""
         try:
             with self._get_connection() as conn:
@@ -831,8 +853,10 @@ class MetricsStorage:
                     "oldest_record": row["oldest"],
                     "newest_record": row["newest"],
                     "database_path": str(self.db_path),
-                    "database_size_bytes": self.db_path.stat().st_size if self.db_path.exists() else 0,
+                    "database_size_bytes": (
+                        self.db_path.stat().st_size if self.db_path.exists() else 0
+                    ),
                 }
 
         except sqlite3.Error as e:
-            raise StorageError(f"Failed to get database stats: {e}")
+            raise StorageError(f"Failed to get database stats: {e}") from e

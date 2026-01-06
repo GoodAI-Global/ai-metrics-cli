@@ -126,7 +126,14 @@ class TestCliHealth:
         try:
             result = runner.invoke(
                 main,
-                ["health", str(good_csv), "--industry", "manufacturing", "--max-high-priority", "0"]
+                [
+                    "health",
+                    str(good_csv),
+                    "--industry",
+                    "manufacturing",
+                    "--max-high-priority",
+                    "0",
+                ],
             )
 
             assert "PASSED" in result.output
@@ -194,9 +201,7 @@ class TestCliCompare:
                     writer.writerow(row)
                 after_path = Path(f.name)
 
-            result = runner.invoke(
-                main, ["compare", str(before_path), str(after_path)]
-            )
+            result = runner.invoke(main, ["compare", str(before_path), str(after_path)])
 
             assert result.exit_code == 0
             output = json.loads(result.output)
@@ -256,7 +261,7 @@ class TestNotificationIntegration:
     def test_send_analysis_notifications_no_webhook(self):
         """_send_analysis_notifications handles empty webhook gracefully."""
         from goodai_metrics.cli import _send_analysis_notifications
-        from goodai_metrics.config import ProjectConfig, NotificationsConfig
+        from goodai_metrics.config import NotificationsConfig, ProjectConfig
 
         config = ProjectConfig(
             notifications=NotificationsConfig(
@@ -270,7 +275,9 @@ class TestNotificationIntegration:
         _send_analysis_notifications(
             config=config,
             analysis_results={"metrics_analyzed": 1, "industry": "general"},
-            recommendations=[{"priority": "HIGH", "metric": "test", "current_value": 0.5}],
+            recommendations=[
+                {"priority": "HIGH", "metric": "test", "current_value": 0.5}
+            ],
             overall_health="CRITICAL",
             regressions=[{"metric": "test", "current_gap_percent": 30}],
         )

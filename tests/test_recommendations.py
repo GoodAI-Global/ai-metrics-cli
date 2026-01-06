@@ -3,13 +3,13 @@
 import pytest
 
 from goodai_metrics.recommendations import (
-    generate_recommendation,
-    generate_all_recommendations,
-    determine_overall_health,
-    check_health_thresholds,
     calculate_gap,
+    check_health_thresholds,
+    determine_overall_health,
     determine_priority,
-    is_higher_better
+    generate_all_recommendations,
+    generate_recommendation,
+    is_higher_better,
 )
 
 
@@ -198,9 +198,7 @@ class TestCustomTargets:
             "accuracy": {"p25": 0.80, "p50": 0.90, "p75": 0.95, "p90": 0.98}
         }
         # Custom target is lower than industry benchmark
-        custom_targets = {
-            "accuracy": {"target": 0.80}  # Lower target
-        }
+        custom_targets = {"accuracy": {"target": 0.80}}  # Lower target
 
         recommendations = generate_all_recommendations(
             analysis_results,
@@ -255,9 +253,7 @@ class TestCustomTargets:
             "latency_ms": {"p25": 100, "p50": 150, "p75": 200, "p90": 300},
         }
         # Only custom target for accuracy
-        custom_targets = {
-            "accuracy": {"target": 0.85}
-        }
+        custom_targets = {"accuracy": {"target": 0.85}}
 
         recommendations = generate_all_recommendations(
             analysis_results,
@@ -276,5 +272,8 @@ class TestCustomTargets:
         assert accuracy_rec["benchmark_p50"] == 0.85
 
         # latency_ms uses industry benchmark
-        assert latency_rec.get("has_custom_target") is None or latency_rec.get("has_custom_target") is False
+        assert (
+            latency_rec.get("has_custom_target") is None
+            or latency_rec.get("has_custom_target") is False
+        )
         assert latency_rec["benchmark_p50"] == 150

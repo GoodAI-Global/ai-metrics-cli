@@ -24,32 +24,39 @@ Configuration search order:
 
 import os
 import re
-from pathlib import Path
-from typing import Dict, Optional, Any
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Optional
 from urllib.parse import urlparse
 
-
 # Constants for config file discovery
-CONFIG_FILENAMES = [".goodai-metrics.yaml", ".goodai-metrics.yml", "goodai-metrics.yaml"]
-ENV_VAR_PATTERN = re.compile(r'\$\{([^}]+)\}')
+CONFIG_FILENAMES = [
+    ".goodai-metrics.yaml",
+    ".goodai-metrics.yml",
+    "goodai-metrics.yaml",
+]
+ENV_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
 # Valid output formats
 VALID_FORMATS = {"json", "text"}
 
 # Slack channel pattern: #channel, @user, or channel ID (CXXXXXXXX)
-SLACK_CHANNEL_PATTERN = re.compile(r'^([#@][\w\-]+|C[A-Z0-9]{8,})$')
+SLACK_CHANNEL_PATTERN = re.compile(r"^([#@][\w\-]+|C[A-Z0-9]{8,})$")
 
 # Blocked hosts for webhook URLs (security)
 BLOCKED_WEBHOOK_HOSTS = {
-    'localhost', '127.0.0.1', '0.0.0.0', '::1',
-    '169.254.169.254',  # AWS metadata
-    'metadata.google.internal',  # GCP metadata
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
+    "::1",
+    "169.254.169.254",  # AWS metadata
+    "metadata.google.internal",  # GCP metadata
 }
 
 
 class ConfigError(Exception):
     """Raised when configuration is invalid."""
+
     pass
 
 
@@ -68,7 +75,7 @@ def _validate_webhook_url(url: Optional[str]) -> None:
     try:
         parsed = urlparse(url)
 
-        if parsed.scheme not in ('http', 'https'):
+        if parsed.scheme not in ("http", "https"):
             raise ConfigError(
                 f"Webhook URL must use http or https, got: {parsed.scheme or 'none'}"
             )
@@ -76,20 +83,16 @@ def _validate_webhook_url(url: Optional[str]) -> None:
         if not parsed.netloc:
             raise ConfigError("Webhook URL must have a valid hostname")
 
-        hostname = parsed.hostname or ''
+        hostname = parsed.hostname or ""
         if hostname.lower() in BLOCKED_WEBHOOK_HOSTS:
-            raise ConfigError(
-                f"Webhook URL cannot target internal host: {hostname}"
-            )
+            raise ConfigError(f"Webhook URL cannot target internal host: {hostname}")
 
         # Block private IP ranges
-        if hostname.startswith('10.') or hostname.startswith('192.168.'):
-            raise ConfigError(
-                f"Webhook URL cannot target private network: {hostname}"
-            )
+        if hostname.startswith("10.") or hostname.startswith("192.168."):
+            raise ConfigError(f"Webhook URL cannot target private network: {hostname}")
 
-        if hostname.startswith('172.'):
-            parts = hostname.split('.')
+        if hostname.startswith("172."):
+            parts = hostname.split(".")
             if len(parts) >= 2:
                 try:
                     second_octet = int(parts[1])
@@ -101,7 +104,7 @@ def _validate_webhook_url(url: Optional[str]) -> None:
                     pass
 
     except ValueError as e:
-        raise ConfigError(f"Invalid webhook URL: {e}")
+        raise ConfigError(f"Invalid webhook URL: {e}") from e
 
 
 def _validate_slack_channel(channel: Optional[str]) -> None:
@@ -121,7 +124,9 @@ def _validate_slack_channel(channel: Optional[str]) -> None:
         )
 
 
-def _validate_storage_path(path: Optional[str], config_dir: Optional[Path] = None) -> None:
+def _validate_storage_path(
+    path: Optional[str], config_dir: Optional[Path] = None
+) -> None:
     """
     Validate storage path is safe (no path traversal).
 
@@ -136,20 +141,17 @@ def _validate_storage_path(path: Optional[str], config_dir: Optional[Path] = Non
         storage = Path(path)
 
         # Check for obvious path traversal
-        if '..' in str(storage):
-            raise ConfigError(
-                f"Storage path cannot contain '..': {path}"
-            )
+        if ".." in str(storage):
+            raise ConfigError(f"Storage path cannot contain '..': {path}")
 
         # If absolute path, must be within reasonable locations
         if storage.is_absolute():
             # Allow /tmp and home directory
             home = Path.home()
-            allowed_roots = [Path('/tmp'), home, Path('/var/tmp')]
+            allowed_roots = [Path("/tmp"), home, Path("/var/tmp")]
 
             is_allowed = any(
-                str(storage).startswith(str(root))
-                for root in allowed_roots
+                str(storage).startswith(str(root)) for root in allowed_roots
             )
 
             if not is_allowed:
@@ -158,15 +160,13 @@ def _validate_storage_path(path: Optional[str], config_dir: Optional[Path] = Non
                 )
 
     except (ValueError, RuntimeError) as e:
-        raise ConfigError(f"Invalid storage path: {e}")
+        raise ConfigError(f"Invalid storage path: {e}") from e
 
 
 def _validate_format(fmt: str) -> None:
     """Validate output format."""
     if fmt not in VALID_FORMATS:
-        raise ConfigError(
-            f"Invalid format: {fmt}. Must be one of: {VALID_FORMATS}"
-        )
+        raise ConfigError(f"Invalid format: {fmt}. Must be one of: {VALID_FORMATS}")
 
 
 def _validate_numeric_bounds(
@@ -191,6 +191,7 @@ def _validate_numeric_bounds(
 @dataclass
 class ThresholdsConfig:
     """CI/CD threshold configuration."""
+
     fail_on_priority: str = "HIGH"  # HIGH, MEDIUM, or LOW
     max_gap_percent: float = 30.0
     max_high_priority: int = 0
@@ -205,12 +206,15 @@ class ThresholdsConfig:
         self.fail_on_priority = self.fail_on_priority.upper()
 
         _validate_numeric_bounds(self.max_gap_percent, "max_gap_percent", 0, 100)
-        _validate_numeric_bounds(float(self.max_high_priority), "max_high_priority", 0, 100)
+        _validate_numeric_bounds(
+            float(self.max_high_priority), "max_high_priority", 0, 100
+        )
 
 
 @dataclass
 class NotificationsConfig:
     """Notification configuration."""
+
     on_regression: bool = False
     on_threshold_breach: bool = False
     webhook_url: Optional[str] = None
@@ -224,6 +228,7 @@ class NotificationsConfig:
 @dataclass
 class CustomTarget:
     """Custom target for a metric."""
+
     target: float  # Goal value
     minimum: Optional[float] = None  # Acceptable floor
     maximum: Optional[float] = None  # Acceptable ceiling
@@ -259,6 +264,7 @@ class CustomBenchmark:
               p90: 0.95
               description: "Our custom accuracy metric"
     """
+
     p25: float  # 25th percentile
     p50: float  # 50th percentile (median)
     p75: float  # 75th percentile
@@ -272,7 +278,7 @@ class CustomBenchmark:
         _validate_numeric_bounds(self.p75, "p75")
         _validate_numeric_bounds(self.p90, "p90")
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to benchmark dictionary format."""
         result = {
             "p25": self.p25,
@@ -290,6 +296,7 @@ class CustomBenchmark:
 @dataclass
 class ProjectConfig:
     """Complete project configuration."""
+
     # Project metadata
     project_name: Optional[str] = None
     version: str = "1.0"
@@ -299,10 +306,12 @@ class ProjectConfig:
     default_format: str = "json"
 
     # Custom targets override benchmarks (simple target/min/max)
-    custom_targets: Dict[str, CustomTarget] = field(default_factory=dict)
+    custom_targets: dict[str, CustomTarget] = field(default_factory=dict)
 
     # Custom benchmarks with full percentile data (industry -> metric -> benchmark)
-    custom_benchmarks: Dict[str, Dict[str, CustomBenchmark]] = field(default_factory=dict)
+    custom_benchmarks: dict[str, dict[str, CustomBenchmark]] = field(
+        default_factory=dict
+    )
 
     # Additional benchmark files to load
     benchmark_files: list = field(default_factory=list)
@@ -324,13 +333,13 @@ class ProjectConfig:
         _validate_format(self.default_format)
         _validate_storage_path(self.storage_path)
 
-    def get_merged_benchmarks(self) -> Dict[str, Dict[str, Any]]:
+    def get_merged_benchmarks(self) -> dict[str, dict[str, Any]]:
         """
         Get custom benchmarks merged into a dictionary format.
 
         Returns dict of industry -> metric -> {p25, p50, p75, p90}.
         """
-        result: Dict[str, Dict[str, Any]] = {}
+        result: dict[str, dict[str, Any]] = {}
         for industry, metrics in self.custom_benchmarks.items():
             result[industry] = {}
             for metric_name, benchmark in metrics.items():
@@ -355,6 +364,7 @@ def _interpolate_env_vars(value: Any, strict: bool = False) -> Any:
         ConfigError: If strict=True and env var is missing without default.
     """
     if isinstance(value, str):
+
         def replace_env_var(match: re.Match) -> str:
             var_expr = match.group(1)
             if ":-" in var_expr:
@@ -387,7 +397,7 @@ def _interpolate_env_vars(value: Any, strict: bool = False) -> Any:
     return value
 
 
-def _parse_yaml_safe(content: str) -> Dict[str, Any]:
+def _parse_yaml_safe(content: str) -> dict[str, Any]:
     """
     Parse YAML content safely.
 
@@ -396,25 +406,26 @@ def _parse_yaml_safe(content: str) -> Dict[str, Any]:
     """
     try:
         import yaml
+
         return yaml.safe_load(content) or {}
     except ImportError:
         # Fallback: minimal parsing for simple key: value files
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
         current_section: Optional[str] = None
         current_indent = 0
 
-        for line in content.split('\n'):
+        for line in content.split("\n"):
             # Skip empty lines and comments
             stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
+            if not stripped or stripped.startswith("#"):
                 continue
 
             # Calculate indent level
             indent = len(line) - len(line.lstrip())
 
             # Check for key: value pattern
-            if ':' in stripped:
-                key, _, value = stripped.partition(':')
+            if ":" in stripped:
+                key, _, value = stripped.partition(":")
                 key = key.strip()
                 value = value.strip()
 
@@ -425,9 +436,9 @@ def _parse_yaml_safe(content: str) -> Dict[str, Any]:
                     value = value[1:-1]
 
                 # Handle boolean values
-                if value.lower() == 'true':
+                if value.lower() == "true":
                     value = True
-                elif value.lower() == 'false':
+                elif value.lower() == "false":
                     value = False
                 elif value.isdigit():
                     value = int(value)
@@ -435,7 +446,7 @@ def _parse_yaml_safe(content: str) -> Dict[str, Any]:
                     value = float(value)
 
                 if indent == 0:
-                    if value == '' or value is None:
+                    if value == "" or value is None:
                         # Start of a new section
                         current_section = key
                         result[key] = {}
@@ -445,7 +456,7 @@ def _parse_yaml_safe(content: str) -> Dict[str, Any]:
                         current_section = None
                 elif current_section and indent > current_indent:
                     if isinstance(result.get(current_section), dict):
-                        result[current_section][key] = value if value != '' else {}
+                        result[current_section][key] = value if value != "" else {}
 
         return result
 
@@ -454,7 +465,7 @@ def _is_float(value: str) -> bool:
     """Check if string represents a float."""
     try:
         float(value)
-        return '.' in value
+        return "." in value
     except (ValueError, TypeError):
         return False
 
@@ -520,7 +531,7 @@ def load_config(config_path: Optional[Path] = None) -> ProjectConfig:
     config_path = Path(config_path).resolve()
 
     # Validate file extension
-    if config_path.suffix.lower() not in ('.yaml', '.yml'):
+    if config_path.suffix.lower() not in (".yaml", ".yml"):
         raise ConfigError(
             f"Config file must be YAML (.yaml or .yml), got: {config_path.suffix}"
         )
@@ -533,15 +544,15 @@ def load_config(config_path: Optional[Path] = None) -> ProjectConfig:
     except UnicodeDecodeError as e:
         raise ConfigError(
             f"Config file must be UTF-8 encoded. Error at position {e.start}: {e.reason}"
-        )
-    except (IOError, OSError) as e:
-        raise ConfigError(f"Failed to read config file: {e}")
+        ) from e
+    except OSError as e:
+        raise ConfigError(f"Failed to read config file: {e}") from e
 
     # Parse YAML
     try:
         raw_config = _parse_yaml_safe(content)
     except Exception as e:
-        raise ConfigError(f"Failed to parse config file: {e}")
+        raise ConfigError(f"Failed to parse config file: {e}") from e
 
     # Interpolate environment variables
     raw_config = _interpolate_env_vars(raw_config)
@@ -550,7 +561,7 @@ def load_config(config_path: Optional[Path] = None) -> ProjectConfig:
     return _build_config(raw_config, config_path)
 
 
-def _build_config(raw: Dict[str, Any], config_path: Path) -> ProjectConfig:
+def _build_config(raw: dict[str, Any], config_path: Path) -> ProjectConfig:
     """Build ProjectConfig from raw parsed data."""
     # Extract nested configs
     thresholds_raw = raw.get("thresholds", raw.get("ci", {}))
@@ -563,7 +574,7 @@ def _build_config(raw: Dict[str, Any], config_path: Path) -> ProjectConfig:
         max_gap = float(thresholds_raw.get("max_gap_percent", 30.0))
         max_high = int(thresholds_raw.get("max_high_priority", 0))
     except (ValueError, TypeError) as e:
-        raise ConfigError(f"Invalid threshold value: {e}")
+        raise ConfigError(f"Invalid threshold value: {e}") from e
 
     thresholds = ThresholdsConfig(
         fail_on_priority=str(thresholds_raw.get("fail_on_priority", "HIGH")),
@@ -572,7 +583,9 @@ def _build_config(raw: Dict[str, Any], config_path: Path) -> ProjectConfig:
     )
 
     # Build notifications with validation
-    webhook_url = notifications_raw.get("webhook_url") or notifications_raw.get("webhook")
+    webhook_url = notifications_raw.get("webhook_url") or notifications_raw.get(
+        "webhook"
+    )
     slack_channel = notifications_raw.get("slack_channel")
 
     notifications = NotificationsConfig(
@@ -586,7 +599,7 @@ def _build_config(raw: Dict[str, Any], config_path: Path) -> ProjectConfig:
     custom_targets = {}
     for metric, target_raw in custom_targets_raw.items():
         # Validate metric name (basic sanitization)
-        if not re.match(r'^[\w_]+$', str(metric)):
+        if not re.match(r"^[\w_]+$", str(metric)):
             raise ConfigError(
                 f"Invalid metric name in custom_targets: {metric}. "
                 "Use only letters, numbers, and underscores."
@@ -596,22 +609,30 @@ def _build_config(raw: Dict[str, Any], config_path: Path) -> ProjectConfig:
             if isinstance(target_raw, dict):
                 custom_targets[metric] = CustomTarget(
                     target=float(target_raw.get("target", 0)),
-                    minimum=float(target_raw["minimum"]) if "minimum" in target_raw else None,
-                    maximum=float(target_raw["maximum"]) if "maximum" in target_raw else None,
+                    minimum=(
+                        float(target_raw["minimum"])
+                        if "minimum" in target_raw
+                        else None
+                    ),
+                    maximum=(
+                        float(target_raw["maximum"])
+                        if "maximum" in target_raw
+                        else None
+                    ),
                 )
             else:
                 # Simple value = target only
                 custom_targets[metric] = CustomTarget(target=float(target_raw))
         except (ValueError, TypeError) as e:
-            raise ConfigError(f"Invalid custom target for {metric}: {e}")
+            raise ConfigError(f"Invalid custom target for {metric}: {e}") from e
 
     # Build custom benchmarks
     custom_benchmarks_raw = raw.get("custom_benchmarks", {})
-    custom_benchmarks: Dict[str, Dict[str, CustomBenchmark]] = {}
+    custom_benchmarks: dict[str, dict[str, CustomBenchmark]] = {}
 
     for industry, metrics_raw in custom_benchmarks_raw.items():
         # Validate industry name
-        if not re.match(r'^[\w_-]+$', str(industry)):
+        if not re.match(r"^[\w_-]+$", str(industry)):
             raise ConfigError(
                 f"Invalid industry name in custom_benchmarks: {industry}. "
                 "Use only letters, numbers, underscores, and hyphens."
@@ -625,7 +646,7 @@ def _build_config(raw: Dict[str, Any], config_path: Path) -> ProjectConfig:
         custom_benchmarks[industry] = {}
         for metric, benchmark_raw in metrics_raw.items():
             # Validate metric name
-            if not re.match(r'^[\w_-]+$', str(metric)):
+            if not re.match(r"^[\w_-]+$", str(metric)):
                 raise ConfigError(
                     f"Invalid metric name in custom_benchmarks.{industry}: {metric}. "
                     "Use only letters, numbers, underscores, and hyphens."
@@ -656,7 +677,7 @@ def _build_config(raw: Dict[str, Any], config_path: Path) -> ProjectConfig:
             except (ValueError, TypeError) as e:
                 raise ConfigError(
                     f"Invalid benchmark value in custom_benchmarks.{industry}.{metric}: {e}"
-                )
+                ) from e
 
     # Parse benchmark files list
     benchmark_files_raw = raw.get("benchmark_files", [])
@@ -665,7 +686,9 @@ def _build_config(raw: Dict[str, Any], config_path: Path) -> ProjectConfig:
     benchmark_files = []
     for bf in benchmark_files_raw:
         if not isinstance(bf, str):
-            raise ConfigError(f"benchmark_files entries must be strings, got: {type(bf)}")
+            raise ConfigError(
+                f"benchmark_files entries must be strings, got: {type(bf)}"
+            )
         # Validate path doesn't contain traversal
         if ".." in bf:
             raise ConfigError(f"benchmark_files path cannot contain '..': {bf}")
@@ -679,7 +702,9 @@ def _build_config(raw: Dict[str, Any], config_path: Path) -> ProjectConfig:
     return ProjectConfig(
         project_name=raw.get("project") or raw.get("project_name"),
         version=str(raw.get("version", "1.0")),
-        default_industry=str(defaults_raw.get("industry", raw.get("industry", "general"))),
+        default_industry=str(
+            defaults_raw.get("industry", raw.get("industry", "general"))
+        ),
         default_format=fmt,
         custom_targets=custom_targets,
         custom_benchmarks=custom_benchmarks,

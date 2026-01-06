@@ -7,14 +7,14 @@ from pathlib import Path
 import pytest
 
 from goodai_metrics.config import (
-    load_config,
-    find_config_file,
+    ConfigError,
+    CustomTarget,
+    NotificationsConfig,
     ProjectConfig,
     ThresholdsConfig,
-    NotificationsConfig,
-    CustomTarget,
-    ConfigError,
     _interpolate_env_vars,
+    find_config_file,
+    load_config,
 )
 
 
@@ -111,11 +111,7 @@ class TestEnvVarInterpolation:
         """Interpolation works in nested dicts."""
         os.environ["NESTED_VAR"] = "nested_value"
         try:
-            data = {
-                "outer": {
-                    "inner": "${NESTED_VAR}"
-                }
-            }
+            data = {"outer": {"inner": "${NESTED_VAR}"}}
             result = _interpolate_env_vars(data)
             assert result["outer"]["inner"] == "nested_value"
         finally:
@@ -229,10 +225,7 @@ class TestConfigIntegration:
         config = ProjectConfig(
             default_industry="manufacturing",
             default_format="text",
-            thresholds=ThresholdsConfig(
-                max_gap_percent=50.0,
-                max_high_priority=2
-            )
+            thresholds=ThresholdsConfig(max_gap_percent=50.0, max_high_priority=2),
         )
 
         # Simulate CLI using config defaults
@@ -244,10 +237,7 @@ class TestConfigIntegration:
 
     def test_cli_args_override_config(self):
         """CLI arguments take precedence over config."""
-        config = ProjectConfig(
-            default_industry="manufacturing",
-            default_format="text"
-        )
+        config = ProjectConfig(default_industry="manufacturing", default_format="text")
 
         # Simulate CLI args overriding
         cli_industry = "insurance"
@@ -265,7 +255,6 @@ class TestSecurityValidation:
 
     def test_webhook_url_blocks_localhost(self):
         """Webhook URL cannot target localhost (SSRF prevention)."""
-        from goodai_metrics.config import NotificationsConfig
 
         with pytest.raises(ConfigError) as exc_info:
             NotificationsConfig(webhook_url="http://localhost:8080/webhook")
@@ -274,7 +263,6 @@ class TestSecurityValidation:
 
     def test_webhook_url_blocks_internal_ip(self):
         """Webhook URL cannot target internal IPs."""
-        from goodai_metrics.config import NotificationsConfig
 
         with pytest.raises(ConfigError) as exc_info:
             NotificationsConfig(webhook_url="http://127.0.0.1:8080/webhook")
@@ -283,7 +271,6 @@ class TestSecurityValidation:
 
     def test_webhook_url_blocks_metadata_service(self):
         """Webhook URL cannot target AWS metadata service (SSRF prevention)."""
-        from goodai_metrics.config import NotificationsConfig
 
         with pytest.raises(ConfigError) as exc_info:
             NotificationsConfig(webhook_url="http://169.254.169.254/latest/meta-data/")
@@ -292,7 +279,6 @@ class TestSecurityValidation:
 
     def test_webhook_url_blocks_private_network_10(self):
         """Webhook URL cannot target 10.x.x.x private network."""
-        from goodai_metrics.config import NotificationsConfig
 
         with pytest.raises(ConfigError) as exc_info:
             NotificationsConfig(webhook_url="http://10.0.0.5:3000/api")
@@ -301,7 +287,6 @@ class TestSecurityValidation:
 
     def test_webhook_url_blocks_private_network_192(self):
         """Webhook URL cannot target 192.168.x.x private network."""
-        from goodai_metrics.config import NotificationsConfig
 
         with pytest.raises(ConfigError) as exc_info:
             NotificationsConfig(webhook_url="http://192.168.1.100/hook")
@@ -310,7 +295,6 @@ class TestSecurityValidation:
 
     def test_webhook_url_blocks_private_network_172(self):
         """Webhook URL cannot target 172.16-31.x.x private network."""
-        from goodai_metrics.config import NotificationsConfig
 
         with pytest.raises(ConfigError) as exc_info:
             NotificationsConfig(webhook_url="http://172.16.0.1/hook")
@@ -319,7 +303,6 @@ class TestSecurityValidation:
 
     def test_webhook_url_allows_public_https(self):
         """Valid public HTTPS URLs are allowed."""
-        from goodai_metrics.config import NotificationsConfig
 
         # Should not raise
         config = NotificationsConfig(webhook_url="https://api.example.com/webhook")
@@ -327,7 +310,6 @@ class TestSecurityValidation:
 
     def test_webhook_url_requires_http_scheme(self):
         """Webhook URL must use http or https scheme."""
-        from goodai_metrics.config import NotificationsConfig
 
         with pytest.raises(ConfigError) as exc_info:
             NotificationsConfig(webhook_url="ftp://example.com/hook")
@@ -336,7 +318,6 @@ class TestSecurityValidation:
 
     def test_slack_channel_valid_formats(self):
         """Valid Slack channel formats are accepted."""
-        from goodai_metrics.config import NotificationsConfig
 
         # #channel format
         config = NotificationsConfig(slack_channel="#alerts")
@@ -352,7 +333,6 @@ class TestSecurityValidation:
 
     def test_slack_channel_invalid_format_raises(self):
         """Invalid Slack channel format raises error."""
-        from goodai_metrics.config import NotificationsConfig
 
         with pytest.raises(ConfigError) as exc_info:
             NotificationsConfig(slack_channel="invalid<script>")
@@ -380,7 +360,6 @@ class TestSecurityValidation:
 
     def test_nan_value_raises(self):
         """NaN values raise ConfigError."""
-        import math
 
         with pytest.raises(ConfigError) as exc_info:
             CustomTarget(target=float("nan"))
@@ -426,6 +405,9 @@ custom_targets:
             with pytest.raises(ConfigError) as exc_info:
                 load_config(config_path)
 
-            assert ".yaml" in str(exc_info.value).lower() or ".yml" in str(exc_info.value).lower()
+            assert (
+                ".yaml" in str(exc_info.value).lower()
+                or ".yml" in str(exc_info.value).lower()
+            )
         finally:
             config_path.unlink()

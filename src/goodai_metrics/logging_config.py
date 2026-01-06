@@ -26,18 +26,34 @@ import uuid
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Dict, Any, Set, Tuple
-
+from typing import Any, Optional
 
 # Context variable for request/operation tracking
 _context_id: ContextVar[str] = ContextVar("context_id", default="")
 
 # Sensitive fields to redact in logs
-SENSITIVE_FIELDS: Set[str] = {
-    "password", "passwd", "secret", "token", "api_key", "apikey",
-    "authorization", "auth", "credential", "private_key", "privatekey",
-    "ssn", "social_security", "credit_card", "creditcard", "card_number",
-    "cvv", "pin", "access_token", "refresh_token", "session_id",
+SENSITIVE_FIELDS: set[str] = {
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "authorization",
+    "auth",
+    "credential",
+    "private_key",
+    "privatekey",
+    "ssn",
+    "social_security",
+    "credit_card",
+    "creditcard",
+    "card_number",
+    "cvv",
+    "pin",
+    "access_token",
+    "refresh_token",
+    "session_id",
 }
 
 # Maximum sizes for security
@@ -51,7 +67,7 @@ MAX_LOG_BACKUP_COUNT = 10
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 
 # Pattern for sanitizing log injection attempts
-CONTROL_CHAR_PATTERN = re.compile(r'[\x00-\x1f\x7f]')
+CONTROL_CHAR_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def _sanitize_log_input(value: str) -> str:
@@ -59,7 +75,7 @@ def _sanitize_log_input(value: str) -> str:
     if not isinstance(value, str):
         value = str(value)
     # Replace control characters (newlines, carriage returns, etc.) with space
-    return CONTROL_CHAR_PATTERN.sub(' ', value)
+    return CONTROL_CHAR_PATTERN.sub(" ", value)
 
 
 def _redact_sensitive(key: str, value: Any) -> Any:
@@ -99,7 +115,9 @@ class JSONFormatter(logging.Formatter):
         # Add context ID if present
         context_id = _context_id.get()
         if context_id:
-            log_obj["context_id"] = _sanitize_log_input(context_id[:MAX_CONTEXT_ID_LENGTH])
+            log_obj["context_id"] = _sanitize_log_input(
+                context_id[:MAX_CONTEXT_ID_LENGTH]
+            )
 
         # Add exception info if present (with size limit)
         if record.exc_info:
@@ -111,11 +129,28 @@ class JSONFormatter(logging.Formatter):
         # Add extra fields with sensitive data filtering
         for key, value in record.__dict__.items():
             if key not in {
-                "name", "msg", "args", "created", "filename", "funcName",
-                "levelname", "levelno", "lineno", "module", "msecs",
-                "pathname", "process", "processName", "relativeCreated",
-                "stack_info", "exc_info", "exc_text", "thread", "threadName",
-                "message", "asctime"
+                "name",
+                "msg",
+                "args",
+                "created",
+                "filename",
+                "funcName",
+                "levelname",
+                "levelno",
+                "lineno",
+                "module",
+                "msecs",
+                "pathname",
+                "process",
+                "processName",
+                "relativeCreated",
+                "stack_info",
+                "exc_info",
+                "exc_text",
+                "thread",
+                "threadName",
+                "message",
+                "asctime",
             }:
                 # Redact sensitive fields
                 value = _redact_sensitive(key, value)
@@ -141,10 +176,10 @@ class HumanFormatter(logging.Formatter):
     """
 
     COLORS = {
-        "DEBUG": "\033[36m",     # Cyan
-        "INFO": "\033[32m",      # Green
-        "WARNING": "\033[33m",   # Yellow
-        "ERROR": "\033[31m",     # Red
+        "DEBUG": "\033[36m",  # Cyan
+        "INFO": "\033[32m",  # Green
+        "WARNING": "\033[33m",  # Yellow
+        "ERROR": "\033[31m",  # Red
         "CRITICAL": "\033[35m",  # Magenta
     }
     RESET = "\033[0m"
@@ -192,7 +227,7 @@ class ContextLogger(logging.LoggerAdapter):
     Provides convenience methods for structured logging with metrics.
     """
 
-    def process(self, msg: str, kwargs: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+    def process(self, msg: str, kwargs: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         """Add context to log message."""
         extra = kwargs.get("extra", {})
 
@@ -209,7 +244,7 @@ class ContextLogger(logging.LoggerAdapter):
         metric_name: str,
         value: float,
         unit: Optional[str] = None,
-        **extra_fields: Any
+        **extra_fields: Any,
     ) -> None:
         """Log a metric value for monitoring/alerting."""
         # Sanitize inputs
@@ -226,12 +261,7 @@ class ContextLogger(logging.LoggerAdapter):
             extra["metric_unit"] = unit_str
         self.info(f"METRIC {metric_name}={value}{unit_str}", extra=extra)
 
-    def timing(
-        self,
-        operation: str,
-        duration_ms: float,
-        **extra_fields: Any
-    ) -> None:
+    def timing(self, operation: str, duration_ms: float, **extra_fields: Any) -> None:
         """Log an operation timing for performance monitoring."""
         # Sanitize inputs
         operation = _sanitize_log_input(str(operation))
@@ -245,12 +275,7 @@ class ContextLogger(logging.LoggerAdapter):
         }
         self.info(f"TIMING {operation}: {duration_ms:.2f}ms", extra=extra)
 
-    def event(
-        self,
-        event_type: str,
-        description: str,
-        **extra_fields: Any
-    ) -> None:
+    def event(self, event_type: str, description: str, **extra_fields: Any) -> None:
         """Log a business event for audit trail."""
         # Sanitize inputs
         event_type = _sanitize_log_input(str(event_type))
@@ -276,21 +301,18 @@ def _validate_log_file_path(log_file: str) -> Path:
     log_path = Path(log_file).resolve()
 
     # Check for path traversal attempt
-    if '..' in str(log_file):
+    if ".." in str(log_file):
         raise ValueError(f"Log file path cannot contain '..': {log_file}")
 
     # Allowed directories: current working dir, home, /tmp, /var/tmp
     allowed_roots = [
         Path.cwd().resolve(),
         Path.home().resolve(),
-        Path('/tmp').resolve(),
-        Path('/var/tmp').resolve(),
+        Path("/tmp").resolve(),
+        Path("/var/tmp").resolve(),
     ]
 
-    is_allowed = any(
-        str(log_path).startswith(str(root))
-        for root in allowed_roots
-    )
+    is_allowed = any(str(log_path).startswith(str(root)) for root in allowed_roots)
 
     if not is_allowed:
         raise ValueError(
@@ -319,14 +341,18 @@ def setup_logging(
     # Validate log level
     level_upper = level.upper()
     if level_upper not in VALID_LOG_LEVELS:
-        raise ValueError(f"Invalid log level: {level}. Must be one of {VALID_LOG_LEVELS}")
+        raise ValueError(
+            f"Invalid log level: {level}. Must be one of {VALID_LOG_LEVELS}"
+        )
 
     # Get root logger for the package
     root_logger = logging.getLogger("goodai_metrics")
     root_logger.setLevel(getattr(logging, level_upper))
 
     # Safely clear existing handlers (close them first)
-    for handler in root_logger.handlers[:]:  # Copy list to avoid modification during iteration
+    for handler in root_logger.handlers[
+        :
+    ]:  # Copy list to avoid modification during iteration
         try:
             handler.close()
         except Exception:
@@ -369,8 +395,8 @@ def setup_logging(
             except (OSError, AttributeError):
                 pass  # Windows or permission error, skip
 
-        except (IOError, OSError) as e:
-            raise ValueError(f"Failed to create log file: {e}")
+        except OSError as e:
+            raise ValueError(f"Failed to create log file: {e}") from e
 
     # Don't propagate to root logger to prevent duplicate logs
     root_logger.propagate = False
@@ -411,7 +437,9 @@ def set_context_id(context_id: Optional[str] = None) -> str:
     else:
         # Validate length
         if len(context_id) > MAX_CONTEXT_ID_LENGTH:
-            raise ValueError(f"context_id exceeds maximum length of {MAX_CONTEXT_ID_LENGTH}")
+            raise ValueError(
+                f"context_id exceeds maximum length of {MAX_CONTEXT_ID_LENGTH}"
+            )
         # Sanitize
         context_id = _sanitize_log_input(context_id)
 

@@ -7,11 +7,9 @@ from pathlib import Path
 import pytest
 
 from goodai_metrics.analyzer import (
-    MetricsAnalyzer,
     AnalysisError,
-    analyze_metrics,
+    MetricsAnalyzer,
     compare_metrics,
-    MetricValue
 )
 from goodai_metrics.benchmarks import load_benchmarks
 
@@ -56,7 +54,14 @@ class TestBenchmarkLoading:
         assert "p90" in accuracy
 
         # Check values are sensible
-        assert 0 < accuracy["p25"] < accuracy["p50"] < accuracy["p75"] < accuracy["p90"] <= 1
+        assert (
+            0
+            < accuracy["p25"]
+            < accuracy["p50"]
+            < accuracy["p75"]
+            < accuracy["p90"]
+            <= 1
+        )
 
 
 class TestMetricsAnalyzer:
@@ -168,12 +173,16 @@ class TestCompareMetrics:
             assert results["summary"]["improved"] == 2
 
             # Check accuracy improved
-            accuracy_comp = next(c for c in results["comparisons"] if c["metric"] == "accuracy")
+            accuracy_comp = next(
+                c for c in results["comparisons"] if c["metric"] == "accuracy"
+            )
             assert accuracy_comp["improved"] is True
             assert accuracy_comp["change_percent"] > 0
 
             # Check latency improved (lower is better)
-            latency_comp = next(c for c in results["comparisons"] if c["metric"] == "latency_ms")
+            latency_comp = next(
+                c for c in results["comparisons"] if c["metric"] == "latency_ms"
+            )
             assert latency_comp["improved"] is True
         finally:
             before_path.unlink()
@@ -244,7 +253,9 @@ class TestCustomBenchmarks:
 
             # Check analysis used custom benchmark
             # analysis is a list, find the metric
-            analysis = next(a for a in results["analysis"] if a["metric"] == "custom_metric")
+            analysis = next(
+                a for a in results["analysis"] if a["metric"] == "custom_metric"
+            )
             assert analysis["benchmark_p50"] == 0.80
         finally:
             filepath.unlink()

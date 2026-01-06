@@ -13,72 +13,74 @@ Core Principles:
 __version__ = "1.0.0"
 __author__ = "rogermsc"
 
-from .benchmarks import (
-    load_benchmarks,
-    load_benchmarks_with_custom,
-    load_benchmark_file,
-    merge_benchmarks,
-    validate_benchmark_data,
-    create_custom_industry,
-    get_benchmark_for_industry,
-    get_available_industries,
-    get_percentile_rank,
-    BenchmarkError,
-)
 from .analyzer import (
-    analyze_metrics,
-    compare_metrics,
+    AnalysisError,
     MetricsAnalyzer,
     MetricValue,
-    AnalysisError,
+    analyze_metrics,
+    compare_metrics,
 )
-from .recommendations import (
-    generate_recommendation,
-    generate_all_recommendations,
-    determine_overall_health,
-    check_health_thresholds,
-    calculate_gap,
-    is_higher_better,
-    determine_priority,
-    determine_effort,
-)
-from .formatters import (
-    format_report_json,
-    format_report_text,
-    format_health_check,
-    format_comparison_json,
-    format_comparison_text,
+from .benchmarks import (
+    BenchmarkError,
+    create_custom_industry,
+    get_available_industries,
+    get_benchmark_for_industry,
+    get_percentile_rank,
+    load_benchmark_file,
+    load_benchmarks,
+    load_benchmarks_with_custom,
+    merge_benchmarks,
+    validate_benchmark_data,
 )
 from .config import (
-    load_config,
-    find_config_file,
+    ConfigError,
+    CustomBenchmark,
+    CustomTarget,
+    NotificationsConfig,
     ProjectConfig,
     ThresholdsConfig,
-    NotificationsConfig,
-    CustomTarget,
-    CustomBenchmark,
-    ConfigError,
+    find_config_file,
+    load_config,
 )
-from .storage import (
-    MetricsStorage,
-    AnalysisRecord,
-    MetricHistory,
-    StorageError,
+from .formatters import (
+    format_comparison_json,
+    format_comparison_text,
+    format_health_check,
+    format_report_json,
+    format_report_text,
 )
 from .logging_config import (
-    setup_logging,
+    ContextLogger,
+    HumanFormatter,
+    JSONFormatter,
+    clear_context_id,
     get_logger,
     set_context_id,
-    clear_context_id,
+    setup_logging,
     timed,
-    JSONFormatter,
-    HumanFormatter,
-    ContextLogger,
+)
+from .recommendations import (
+    calculate_gap,
+    check_health_thresholds,
+    determine_effort,
+    determine_overall_health,
+    determine_priority,
+    generate_all_recommendations,
+    generate_recommendation,
+    is_higher_better,
+)
+from .storage import (
+    AnalysisRecord,
+    MetricHistory,
+    MetricsStorage,
+    StorageError,
 )
 
 # API is optional (requires server extras)
 try:
-    from .api import create_app, app as api_app
+    from .api import app as api_app
+    from .api import create_app
+
     _HAS_API = True
 except ImportError:
     _HAS_API = False
@@ -88,10 +90,11 @@ except ImportError:
 # Reports are optional (requires reports extras)
 try:
     from .reports import (
-        generate_pdf_report,
-        generate_comparison_pdf_report,
         ReportError,
+        generate_comparison_pdf_report,
+        generate_pdf_report,
     )
+
     _HAS_REPORTS = True
 except ImportError:
     _HAS_REPORTS = False
@@ -100,29 +103,28 @@ except ImportError:
     ReportError = None
 
 # Notifications
-from .notifications import (
-    send_webhook_notification,
-    send_slack_notification,
-    notify_analysis_complete,
-    notify_threshold_breach,
-    notify_regression_detected,
-    is_slack_webhook,
-    NotificationError,
-)
-
 # CI/CD Integration
 from .cicd import (
-    generate_junit_xml,
-    generate_github_annotations,
-    generate_gitlab_ci_report,
-    get_exit_code,
-    format_summary_table,
-    batch_check_files,
-    CICDError,
-    EXIT_SUCCESS,
-    EXIT_THRESHOLD_FAILURE,
     EXIT_ANALYSIS_ERROR,
     EXIT_CONFIG_ERROR,
+    EXIT_SUCCESS,
+    EXIT_THRESHOLD_FAILURE,
+    CICDError,
+    batch_check_files,
+    format_summary_table,
+    generate_github_annotations,
+    generate_gitlab_ci_report,
+    generate_junit_xml,
+    get_exit_code,
+)
+from .notifications import (
+    NotificationError,
+    is_slack_webhook,
+    notify_analysis_complete,
+    notify_regression_detected,
+    notify_threshold_breach,
+    send_slack_notification,
+    send_webhook_notification,
 )
 
 __all__ = [

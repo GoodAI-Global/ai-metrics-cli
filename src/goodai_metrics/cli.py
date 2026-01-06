@@ -13,52 +13,48 @@ Usage:
 
 import sys
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Any, Optional
 
 import click
 
 from . import __version__
-from .analyzer import MetricsAnalyzer, AnalysisError, compare_metrics
-from .benchmarks import load_benchmarks, get_benchmark_for_industry, BenchmarkError
-from .config import (
-    load_config,
-    find_config_file,
-    ProjectConfig,
-    ConfigError,
-)
-from .storage import MetricsStorage, StorageError
-from .logging_config import setup_logging, get_logger, set_context_id, timed
-from .recommendations import (
-    generate_all_recommendations,
-    determine_overall_health,
-    check_health_thresholds
-)
-from .formatters import (
-    format_report_json,
-    format_report_text,
-    format_health_check,
-    format_comparison_json,
-    format_comparison_text
-)
+from .analyzer import AnalysisError, MetricsAnalyzer, compare_metrics
+from .benchmarks import BenchmarkError, load_benchmarks
 from .cicd import (
-    generate_junit_xml,
+    EXIT_SUCCESS,
+    CICDError,
+    batch_check_files,
+    format_summary_table,
     generate_github_annotations,
     generate_gitlab_ci_report,
-    get_exit_code,
-    format_summary_table,
-    batch_check_files,
-    CICDError,
-    EXIT_SUCCESS,
-    EXIT_THRESHOLD_FAILURE,
-    EXIT_ANALYSIS_ERROR,
+    generate_junit_xml,
 )
+from .config import (
+    ConfigError,
+    ProjectConfig,
+    find_config_file,
+    load_config,
+)
+from .formatters import (
+    format_comparison_json,
+    format_comparison_text,
+    format_health_check,
+    format_report_json,
+    format_report_text,
+)
+from .logging_config import get_logger, set_context_id, setup_logging, timed
 from .notifications import (
+    NotificationError,
+    is_slack_webhook,
     notify_regression_detected,
     notify_threshold_breach,
-    is_slack_webhook,
-    NotificationError,
 )
-
+from .recommendations import (
+    check_health_thresholds,
+    determine_overall_health,
+    generate_all_recommendations,
+)
+from .storage import MetricsStorage, StorageError
 
 # Sample data mapping
 SAMPLE_DATA_MAP = {
@@ -69,7 +65,7 @@ SAMPLE_DATA_MAP = {
 }
 
 # Default config template
-CONFIG_TEMPLATE = '''# Good AI Metrics Configuration
+CONFIG_TEMPLATE = """# Good AI Metrics Configuration
 # https://github.com/goodai/goodai-metrics
 
 version: "1.0"
@@ -106,7 +102,7 @@ thresholds:
 # Storage settings
 store_results: false
 storage_path: .goodai-metrics/history.db
-'''
+"""
 
 
 def get_sample_data_path(industry: str) -> Path:
@@ -153,10 +149,14 @@ def _create_analyzer(industry: str, config: ProjectConfig) -> MetricsAnalyzer:
         Configured MetricsAnalyzer instance.
     """
     # Get custom benchmarks from config
-    custom_benchmarks = config.get_merged_benchmarks() if config.custom_benchmarks else None
+    custom_benchmarks = (
+        config.get_merged_benchmarks() if config.custom_benchmarks else None
+    )
 
     # Get additional benchmark files
-    benchmark_files = [Path(f) for f in config.benchmark_files] if config.benchmark_files else None
+    benchmark_files = (
+        [Path(f) for f in config.benchmark_files] if config.benchmark_files else None
+    )
 
     return MetricsAnalyzer(
         industry=industry,
@@ -167,7 +167,7 @@ def _create_analyzer(industry: str, config: ProjectConfig) -> MetricsAnalyzer:
 
 def _send_analysis_notifications(
     config: ProjectConfig,
-    analysis_results: Dict,
+    analysis_results: dict,
     recommendations: list,
     overall_health: str,
     regressions: list,
@@ -204,12 +204,18 @@ def _send_analysis_notifications(
             )
             click.echo("Regression notification sent", err=True)
         except NotificationError as e:
-            click.echo(f"Warning: Failed to send regression notification: {e}", err=True)
+            click.echo(
+                f"Warning: Failed to send regression notification: {e}", err=True
+            )
 
     # Send threshold breach notification if enabled and HIGH priority items exist
     if config.notifications.on_threshold_breach:
-        high_priority_items = [r for r in recommendations if r.get("priority") == "HIGH"]
-        for item in high_priority_items[:3]:  # Limit to first 3 to avoid notification spam
+        high_priority_items = [
+            r for r in recommendations if r.get("priority") == "HIGH"
+        ]
+        for item in high_priority_items[
+            :3
+        ]:  # Limit to first 3 to avoid notification spam
             try:
                 notify_threshold_breach(
                     webhook_url=webhook_url,
@@ -221,46 +227,39 @@ def _send_analysis_notifications(
                     is_slack=is_slack,
                 )
             except NotificationError as e:
-                click.echo(f"Warning: Failed to send threshold notification: {e}", err=True)
+                click.echo(
+                    f"Warning: Failed to send threshold notification: {e}", err=True
+                )
                 break  # Stop on first failure
 
         if high_priority_items:
             click.echo(
                 f"Threshold breach notification(s) sent for {min(len(high_priority_items), 3)} metric(s)",
-                err=True
+                err=True,
             )
 
 
 @click.group()
 @click.version_option(version=__version__, prog_name="goodai-metrics")
 @click.option(
-    "--config", "-c",
+    "--config",
+    "-c",
     "config_path",
     type=click.Path(exists=True),
-    help="Path to config file (default: auto-discover)"
+    help="Path to config file (default: auto-discover)",
 )
 @click.option(
-    "--verbose", "-v",
-    is_flag=True,
-    help="Enable verbose output (debug logging)"
+    "--verbose", "-v", is_flag=True, help="Enable verbose output (debug logging)"
 )
-@click.option(
-    "--json-logs",
-    is_flag=True,
-    help="Output logs in JSON format"
-)
-@click.option(
-    "--log-file",
-    type=click.Path(),
-    help="Write logs to file"
-)
+@click.option("--json-logs", is_flag=True, help="Output logs in JSON format")
+@click.option("--log-file", type=click.Path(), help="Write logs to file")
 @click.pass_context
 def main(
     ctx: click.Context,
     config_path: Optional[str],
     verbose: bool,
     json_logs: bool,
-    log_file: Optional[str]
+    log_file: Optional[str],
 ):
     """
     Good AI Metrics CLI - Enterprise AI Implementation Analytics.
@@ -296,24 +295,26 @@ def main(
 @click.option(
     "--sample",
     type=click.Choice(["manufacturing", "insurance", "aquaculture", "general"]),
-    help="Use built-in sample data for the specified industry"
+    help="Use built-in sample data for the specified industry",
 )
 @click.option(
-    "--industry", "-i",
+    "--industry",
+    "-i",
     default=None,
-    help="Industry for benchmark comparison (auto-detected from --sample if used)"
+    help="Industry for benchmark comparison (auto-detected from --sample if used)",
 )
 @click.option(
-    "--format", "-f",
+    "--format",
+    "-f",
     "output_format",
     type=click.Choice(["json", "text"]),
     default=None,
-    help="Output format (default: from config or json)"
+    help="Output format (default: from config or json)",
 )
 @click.option(
     "--store/--no-store",
     default=None,
-    help="Store results in history database (default: from config)"
+    help="Store results in history database (default: from config)",
 )
 @click.pass_context
 def analyze(
@@ -322,7 +323,7 @@ def analyze(
     sample: Optional[str],
     industry: Optional[str],
     output_format: Optional[str],
-    store: Optional[bool]
+    store: Optional[bool],
 ):
     """
     Analyze AI metrics against industry benchmarks.
@@ -384,7 +385,10 @@ def analyze(
             overall_health = determine_overall_health(recommendations)
 
         logger.metric("metrics_analyzed", analysis_results.get("metrics_analyzed", 0))
-        logger.metric("high_priority_count", sum(1 for r in recommendations if r.get("priority") == "HIGH"))
+        logger.metric(
+            "high_priority_count",
+            sum(1 for r in recommendations if r.get("priority") == "HIGH"),
+        )
 
         # Build full results
         full_results = {
@@ -398,7 +402,9 @@ def analyze(
         regressions = []
         if should_store:
             try:
-                storage_path = Path(config.storage_path) if config.storage_path else None
+                storage_path = (
+                    Path(config.storage_path) if config.storage_path else None
+                )
                 storage = MetricsStorage(db_path=storage_path)
 
                 # Detect regressions BEFORE storing (compare with previous)
@@ -410,21 +416,22 @@ def analyze(
 
                 # Store the analysis
                 run_id = storage.store_analysis(
-                    full_results,
-                    project=config.project_name
+                    full_results, project=config.project_name
                 )
                 click.echo(f"Results stored (run_id: {run_id})", err=True)
 
                 # Report regressions if found
                 if regressions:
                     click.echo("", err=True)
-                    click.echo(f"WARNING: {len(regressions)} regression(s) detected!", err=True)
+                    click.echo(
+                        f"WARNING: {len(regressions)} regression(s) detected!", err=True
+                    )
                     for reg in regressions[:5]:  # Limit output
                         click.echo(
                             f"  - {reg['metric']}: gap increased from "
                             f"{reg['previous_gap_percent']:.1f}% to {reg['current_gap_percent']:.1f}% "
                             f"(+{reg['gap_increase']:.1f}%)",
-                            err=True
+                            err=True,
                         )
                     if len(regressions) > 5:
                         click.echo(f"  ... and {len(regressions) - 5} more", err=True)
@@ -443,39 +450,46 @@ def analyze(
 
         # Format output
         if output_format == "json":
-            output = format_report_json(analysis_results, recommendations, overall_health)
+            output = format_report_json(
+                analysis_results, recommendations, overall_health
+            )
         else:
-            output = format_report_text(analysis_results, recommendations, overall_health)
+            output = format_report_text(
+                analysis_results, recommendations, overall_health
+            )
 
         click.echo(output)
-        logger.event("analysis_completed", f"Health: {overall_health}", industry=industry)
+        logger.event(
+            "analysis_completed", f"Health: {overall_health}", industry=industry
+        )
 
     except BenchmarkError as e:
         logger.error(f"Benchmark error: {e}")
-        raise click.ClickException(f"Benchmark error: {e}")
+        raise click.ClickException(f"Benchmark error: {e}") from e
     except AnalysisError as e:
         logger.error(f"Analysis error: {e}")
-        raise click.ClickException(f"Analysis error: {e}")
+        raise click.ClickException(f"Analysis error: {e}") from e
 
 
 @main.command()
 @click.argument("file", type=click.Path(exists=True))
 @click.option(
-    "--industry", "-i",
+    "--industry",
+    "-i",
     default=None,
-    help="Industry for benchmark comparison (default: from config or general)"
+    help="Industry for benchmark comparison (default: from config or general)",
 )
 @click.option(
     "--max-high-priority",
     default=None,
     type=int,
-    help="Maximum allowed HIGH priority items (default: from config or 0)"
+    help="Maximum allowed HIGH priority items (default: from config or 0)",
 )
 @click.option(
     "--max-gap",
     default=None,
     type=float,
-    help="Maximum allowed gap percentage (default: from config or 30.0)"
+    help="Maximum allowed gap percentage (default: from config or 30.0)",
 )
 @click.pass_context
 def health(
@@ -483,7 +497,7 @@ def health(
     file: str,
     industry: Optional[str],
     max_high_priority: Optional[int],
-    max_gap: Optional[float]
+    max_gap: Optional[float],
 ):
     """
     Quick health check for CI/CD pipelines.
@@ -528,7 +542,7 @@ def health(
         health_result = check_health_thresholds(
             recommendations,
             max_high_priority=max_high_priority,
-            max_gap_percent=max_gap
+            max_gap_percent=max_gap,
         )
 
         # Output result
@@ -542,25 +556,27 @@ def health(
             sys.exit(1)
 
     except BenchmarkError as e:
-        raise click.ClickException(f"Benchmark error: {e}")
+        raise click.ClickException(f"Benchmark error: {e}") from e
     except AnalysisError as e:
-        raise click.ClickException(f"Analysis error: {e}")
+        raise click.ClickException(f"Analysis error: {e}") from e
 
 
 @main.command()
 @click.argument("before_file", type=click.Path(exists=True))
 @click.argument("after_file", type=click.Path(exists=True))
 @click.option(
-    "--industry", "-i",
+    "--industry",
+    "-i",
     default=None,
-    help="Industry context (default: from config or general)"
+    help="Industry context (default: from config or general)",
 )
 @click.option(
-    "--format", "-f",
+    "--format",
+    "-f",
     "output_format",
     type=click.Choice(["json", "text"]),
     default=None,
-    help="Output format (default: from config or json)"
+    help="Output format (default: from config or json)",
 )
 @click.pass_context
 def compare(
@@ -568,7 +584,7 @@ def compare(
     before_file: str,
     after_file: str,
     industry: Optional[str],
-    output_format: Optional[str]
+    output_format: Optional[str],
 ):
     """
     Compare metrics between two time periods.
@@ -591,8 +607,14 @@ def compare(
 
     try:
         # Get custom benchmarks from config
-        custom_benchmarks = config.get_merged_benchmarks() if config.custom_benchmarks else None
-        benchmark_files = [Path(f) for f in config.benchmark_files] if config.benchmark_files else None
+        custom_benchmarks = (
+            config.get_merged_benchmarks() if config.custom_benchmarks else None
+        )
+        benchmark_files = (
+            [Path(f) for f in config.benchmark_files]
+            if config.benchmark_files
+            else None
+        )
 
         comparison_results = compare_metrics(
             Path(before_file),
@@ -610,7 +632,7 @@ def compare(
         click.echo(output)
 
     except AnalysisError as e:
-        raise click.ClickException(f"Analysis error: {e}")
+        raise click.ClickException(f"Analysis error: {e}") from e
 
 
 @main.command()
@@ -618,30 +640,21 @@ def compare(
 @click.option(
     "--sample",
     type=click.Choice(["manufacturing", "insurance", "aquaculture", "general"]),
-    help="Use built-in sample data for the specified industry"
+    help="Use built-in sample data for the specified industry",
 )
 @click.option(
-    "--industry", "-i",
-    default=None,
-    help="Industry for benchmark comparison"
+    "--industry", "-i", default=None, help="Industry for benchmark comparison"
 )
 @click.option(
-    "--output", "-o",
+    "--output",
+    "-o",
     "output_path",
     type=click.Path(),
     default="report.pdf",
-    help="Output PDF file path (default: report.pdf)"
+    help="Output PDF file path (default: report.pdf)",
 )
-@click.option(
-    "--title", "-t",
-    default=None,
-    help="Custom report title"
-)
-@click.option(
-    "--description", "-d",
-    default=None,
-    help="Report description/notes"
-)
+@click.option("--title", "-t", default=None, help="Custom report title")
+@click.option("--description", "-d", default=None, help="Report description/notes")
 @click.pass_context
 def report(
     ctx: click.Context,
@@ -650,7 +663,7 @@ def report(
     industry: Optional[str],
     output_path: str,
     title: Optional[str],
-    description: Optional[str]
+    description: Optional[str],
 ):
     """
     Generate a PDF analysis report.
@@ -667,12 +680,12 @@ def report(
         goodai-metrics report data.csv --title "Q4 AI Metrics Review"
     """
     try:
-        from .reports import generate_pdf_report, ReportError
+        from .reports import ReportError, generate_pdf_report
     except ImportError:
         raise click.ClickException(
             "PDF report generation requires reportlab. "
             "Install with: pip install 'goodai-metrics[reports]'"
-        )
+        ) from None
 
     config: ProjectConfig = ctx.obj.get("config", ProjectConfig())
     logger = get_logger(__name__)
@@ -699,7 +712,9 @@ def report(
     if not output_file.suffix.lower() == ".pdf":
         output_file = output_file.with_suffix(".pdf")
 
-    logger.event("report_generation_started", f"Generating PDF report for {filepath.name}")
+    logger.event(
+        "report_generation_started", f"Generating PDF report for {filepath.name}"
+    )
 
     try:
         # Create analyzer with custom benchmarks from config
@@ -732,35 +747,28 @@ def report(
 
     except ReportError as e:
         logger.error(f"Report error: {e}")
-        raise click.ClickException(f"Report error: {e}")
+        raise click.ClickException(f"Report error: {e}") from e
     except BenchmarkError as e:
         logger.error(f"Benchmark error: {e}")
-        raise click.ClickException(f"Benchmark error: {e}")
+        raise click.ClickException(f"Benchmark error: {e}") from e
     except AnalysisError as e:
         logger.error(f"Analysis error: {e}")
-        raise click.ClickException(f"Analysis error: {e}")
+        raise click.ClickException(f"Analysis error: {e}") from e
 
 
 @main.command(name="report-compare")
 @click.argument("before_file", type=click.Path(exists=True))
 @click.argument("after_file", type=click.Path(exists=True))
+@click.option("--industry", "-i", default=None, help="Industry context")
 @click.option(
-    "--industry", "-i",
-    default=None,
-    help="Industry context"
-)
-@click.option(
-    "--output", "-o",
+    "--output",
+    "-o",
     "output_path",
     type=click.Path(),
     default="comparison_report.pdf",
-    help="Output PDF file path (default: comparison_report.pdf)"
+    help="Output PDF file path (default: comparison_report.pdf)",
 )
-@click.option(
-    "--title", "-t",
-    default=None,
-    help="Custom report title"
-)
+@click.option("--title", "-t", default=None, help="Custom report title")
 @click.pass_context
 def report_compare(
     ctx: click.Context,
@@ -768,7 +776,7 @@ def report_compare(
     after_file: str,
     industry: Optional[str],
     output_path: str,
-    title: Optional[str]
+    title: Optional[str],
 ):
     """
     Generate a PDF comparison report.
@@ -785,12 +793,12 @@ def report_compare(
         goodai-metrics report-compare old.csv new.csv --title "Monthly Review"
     """
     try:
-        from .reports import generate_comparison_pdf_report, ReportError
+        from .reports import ReportError, generate_comparison_pdf_report
     except ImportError:
         raise click.ClickException(
             "PDF report generation requires reportlab. "
             "Install with: pip install 'goodai-metrics[reports]'"
-        )
+        ) from None
 
     config: ProjectConfig = ctx.obj.get("config", ProjectConfig())
     logger = get_logger(__name__)
@@ -802,14 +810,13 @@ def report_compare(
     if not output_file.suffix.lower() == ".pdf":
         output_file = output_file.with_suffix(".pdf")
 
-    logger.event("comparison_report_started", f"Generating comparison report")
+    logger.event("comparison_report_started", "Generating comparison report")
 
     try:
         from .analyzer import compare_metrics as do_compare
+
         comparison_results = do_compare(
-            Path(before_file),
-            Path(after_file),
-            industry=industry
+            Path(before_file), Path(after_file), industry=industry
         )
 
         result_path = generate_comparison_pdf_report(
@@ -824,10 +831,10 @@ def report_compare(
 
     except ReportError as e:
         logger.error(f"Report error: {e}")
-        raise click.ClickException(f"Report error: {e}")
+        raise click.ClickException(f"Report error: {e}") from e
     except AnalysisError as e:
         logger.error(f"Analysis error: {e}")
-        raise click.ClickException(f"Analysis error: {e}")
+        raise click.ClickException(f"Analysis error: {e}") from e
 
 
 @main.command(name="list-industries")
@@ -842,7 +849,7 @@ def list_industries():
             metrics = list(benchmarks[industry].keys())
             click.echo(f"  - {industry}: {', '.join(metrics)}")
     except BenchmarkError as e:
-        raise click.ClickException(f"Benchmark error: {e}")
+        raise click.ClickException(f"Benchmark error: {e}") from e
 
 
 @main.command()
@@ -878,7 +885,9 @@ def config(ctx: click.Context, show: bool, init_config: bool, path: bool):
         if found_path:
             click.echo(found_path)
         else:
-            click.echo("No config file found. Use 'goodai-metrics config --init' to create one.")
+            click.echo(
+                "No config file found. Use 'goodai-metrics config --init' to create one."
+            )
         return
 
     # Default: show config
@@ -917,28 +926,22 @@ def config(ctx: click.Context, show: bool, init_config: bool, path: bool):
 
 
 @main.command()
+@click.option("--project", "-p", default=None, help="Filter by project name")
+@click.option("--industry", "-i", default=None, help="Filter by industry")
 @click.option(
-    "--project", "-p",
-    default=None,
-    help="Filter by project name"
-)
-@click.option(
-    "--industry", "-i",
-    default=None,
-    help="Filter by industry"
-)
-@click.option(
-    "--limit", "-n",
+    "--limit",
+    "-n",
     default=20,
     type=int,
-    help="Number of records to show (default: 20)"
+    help="Number of records to show (default: 20)",
 )
 @click.option(
-    "--format", "-f",
+    "--format",
+    "-f",
     "output_format",
     type=click.Choice(["json", "text"]),
     default="text",
-    help="Output format (default: text)"
+    help="Output format (default: text)",
 )
 @click.pass_context
 def history(
@@ -946,7 +949,7 @@ def history(
     project: Optional[str],
     industry: Optional[str],
     limit: int,
-    output_format: str
+    output_format: str,
 ):
     """
     View analysis history from storage.
@@ -965,11 +968,7 @@ def history(
         storage_path = Path(config.storage_path) if config.storage_path else None
         storage = MetricsStorage(db_path=storage_path)
 
-        records = storage.list_analyses(
-            project=project,
-            industry=industry,
-            limit=limit
-        )
+        records = storage.list_analyses(project=project, industry=industry, limit=limit)
 
         if not records:
             click.echo("No analysis records found.")
@@ -977,6 +976,7 @@ def history(
 
         if output_format == "json":
             import json
+
             output = json.dumps([r.to_dict() for r in records], indent=2)
             click.echo(output)
         else:
@@ -984,24 +984,27 @@ def history(
             click.echo("=" * 60)
             for record in records:
                 click.echo(f"\n  Run ID:    {record.run_id}")
-                click.echo(f"  Timestamp: {record.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+                click.echo(
+                    f"  Timestamp: {record.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+                )
                 click.echo(f"  Project:   {record.project or '(default)'}")
                 click.echo(f"  Industry:  {record.industry}")
                 click.echo(f"  Health:    {record.overall_health}")
                 click.echo(f"  Metrics:   {record.metrics_count}")
 
     except StorageError as e:
-        raise click.ClickException(f"Storage error: {e}")
+        raise click.ClickException(f"Storage error: {e}") from e
 
 
 @main.command(name="history-show")
 @click.argument("run_id")
 @click.option(
-    "--format", "-f",
+    "--format",
+    "-f",
     "output_format",
     type=click.Choice(["json", "text"]),
     default="json",
-    help="Output format (default: json)"
+    help="Output format (default: json)",
 )
 @click.pass_context
 def history_show(ctx: click.Context, run_id: str, output_format: str):
@@ -1027,6 +1030,7 @@ def history_show(ctx: click.Context, run_id: str, output_format: str):
 
         if output_format == "json":
             import json
+
             output = json.dumps(record.full_results, indent=2)
             click.echo(output)
         else:
@@ -1034,15 +1038,11 @@ def history_show(ctx: click.Context, run_id: str, output_format: str):
             recommendations = results.get("recommendations", [])
             overall_health = results.get("overall_health", "unknown")
 
-            output = format_report_text(
-                results,
-                recommendations,
-                overall_health
-            )
+            output = format_report_text(results, recommendations, overall_health)
             click.echo(output)
 
     except StorageError as e:
-        raise click.ClickException(f"Storage error: {e}")
+        raise click.ClickException(f"Storage error: {e}") from e
 
 
 @main.command(name="history-stats")
@@ -1073,7 +1073,7 @@ def history_stats(ctx: click.Context):
         click.echo(f"Newest record:    {stats['newest_record'] or 'N/A'}")
 
     except StorageError as e:
-        raise click.ClickException(f"Storage error: {e}")
+        raise click.ClickException(f"Storage error: {e}") from e
 
 
 @main.command(name="history-cleanup")
@@ -1081,13 +1081,9 @@ def history_stats(ctx: click.Context):
     "--days",
     default=90,
     type=int,
-    help="Delete records older than this many days (default: 90)"
+    help="Delete records older than this many days (default: 90)",
 )
-@click.option(
-    "--yes", "-y",
-    is_flag=True,
-    help="Skip confirmation prompt"
-)
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.pass_context
 def history_cleanup(ctx: click.Context, days: int, yes: bool):
     """
@@ -1103,8 +1099,7 @@ def history_cleanup(ctx: click.Context, days: int, yes: bool):
 
     if not yes:
         click.confirm(
-            f"Delete all analysis records older than {days} days?",
-            abort=True
+            f"Delete all analysis records older than {days} days?", abort=True
         )
 
     try:
@@ -1115,27 +1110,21 @@ def history_cleanup(ctx: click.Context, days: int, yes: bool):
         click.echo(f"Deleted {deleted} old record(s).")
 
     except StorageError as e:
-        raise click.ClickException(f"Storage error: {e}")
+        raise click.ClickException(f"Storage error: {e}") from e
 
 
 @main.command()
+@click.option("--project", "-p", default=None, help="Filter by project name")
 @click.option(
-    "--project", "-p",
-    default=None,
-    help="Filter by project name"
+    "--days", "-d", default=30, type=int, help="Number of days to analyze (default: 30)"
 )
 @click.option(
-    "--days", "-d",
-    default=30,
-    type=int,
-    help="Number of days to analyze (default: 30)"
-)
-@click.option(
-    "--format", "-f",
+    "--format",
+    "-f",
     "output_format",
     type=click.Choice(["json", "text"]),
     default="text",
-    help="Output format (default: text)"
+    help="Output format (default: text)",
 )
 @click.pass_context
 def trends(ctx: click.Context, project: Optional[str], days: int, output_format: str):
@@ -1163,16 +1152,17 @@ def trends(ctx: click.Context, project: Optional[str], days: int, output_format:
 
         if output_format == "json":
             import json
+
             output = json.dumps(summary, indent=2)
             click.echo(output)
         else:
             _format_trends_text(summary, days, project)
 
     except StorageError as e:
-        raise click.ClickException(f"Storage error: {e}")
+        raise click.ClickException(f"Storage error: {e}") from e
 
 
-def _format_trends_text(summary: Dict, days: int, project: Optional[str]) -> None:
+def _format_trends_text(summary: dict, days: int, project: Optional[str]) -> None:
     """Format trend summary as text output."""
     click.echo(f"Metric Trends (last {days} days)")
     if project:
@@ -1197,21 +1187,27 @@ def _format_trends_text(summary: Dict, days: int, project: Optional[str]) -> Non
     declining = summary.get("declining", 0)
     stable = summary.get("stable", 0)
 
-    click.echo(f"\nSummary: {improving} improving, {declining} declining, {stable} stable")
+    click.echo(
+        f"\nSummary: {improving} improving, {declining} declining, {stable} stable"
+    )
 
     # Show declining metrics first (most actionable)
     declining_trends = [t for t in summary["trends"] if t["direction"] == "declining"]
     if declining_trends:
         click.echo("\n[DECLINING]")
         for trend in declining_trends:
-            click.echo(f"  {trend['metric']}: {trend['first_value']:.2f} -> {trend['last_value']:.2f} ({trend['change_percent']:+.1f}%)")
+            click.echo(
+                f"  {trend['metric']}: {trend['first_value']:.2f} -> {trend['last_value']:.2f} ({trend['change_percent']:+.1f}%)"
+            )
 
     # Then improving
     improving_trends = [t for t in summary["trends"] if t["direction"] == "improving"]
     if improving_trends:
         click.echo("\n[IMPROVING]")
         for trend in improving_trends:
-            click.echo(f"  {trend['metric']}: {trend['first_value']:.2f} -> {trend['last_value']:.2f} ({trend['change_percent']:+.1f}%)")
+            click.echo(
+                f"  {trend['metric']}: {trend['first_value']:.2f} -> {trend['last_value']:.2f} ({trend['change_percent']:+.1f}%)"
+            )
 
     # Then stable
     stable_trends = [t for t in summary["trends"] if t["direction"] == "stable"]
@@ -1223,23 +1219,21 @@ def _format_trends_text(summary: Dict, days: int, project: Optional[str]) -> Non
 
 @main.command(name="metric-history")
 @click.argument("metric_name")
+@click.option("--project", "-p", default=None, help="Filter by project name")
 @click.option(
-    "--project", "-p",
-    default=None,
-    help="Filter by project name"
-)
-@click.option(
-    "--days", "-d",
+    "--days",
+    "-d",
     default=30,
     type=int,
-    help="Number of days to look back (default: 30)"
+    help="Number of days to look back (default: 30)",
 )
 @click.option(
-    "--format", "-f",
+    "--format",
+    "-f",
     "output_format",
     type=click.Choice(["json", "text"]),
     default="text",
-    help="Output format (default: text)"
+    help="Output format (default: text)",
 )
 @click.pass_context
 def metric_history(
@@ -1247,7 +1241,7 @@ def metric_history(
     metric_name: str,
     project: Optional[str],
     days: int,
-    output_format: str
+    output_format: str,
 ):
     """
     Show history for a specific metric.
@@ -1272,13 +1266,14 @@ def metric_history(
 
         if output_format == "json":
             import json
+
             output = json.dumps(history.to_dict(), indent=2)
             click.echo(output)
         else:
             _format_metric_history_text(history, days, project)
 
     except StorageError as e:
-        raise click.ClickException(f"Storage error: {e}")
+        raise click.ClickException(f"Storage error: {e}") from e
 
 
 def _format_metric_history_text(history, days: int, project: Optional[str]) -> None:
@@ -1310,43 +1305,39 @@ def _format_metric_history_text(history, days: int, project: Optional[str]) -> N
         last = history.values[-1]["value"]
         if first != 0:
             change = ((last - first) / abs(first)) * 100
-            direction = "improved" if change > 0 else "declined" if change < 0 else "unchanged"
-            click.echo(f"\nTrend: {first:.3f} -> {last:.3f} ({change:+.1f}%, {direction})")
+            direction = (
+                "improved" if change > 0 else "declined" if change < 0 else "unchanged"
+            )
+            click.echo(
+                f"\nTrend: {first:.3f} -> {last:.3f} ({change:+.1f}%, {direction})"
+            )
 
 
 @main.command()
 @click.option(
-    "--host", "-h",
-    default="127.0.0.1",
-    help="Host to bind (default: 127.0.0.1)"
+    "--host", "-h", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)"
 )
 @click.option(
-    "--port", "-p",
-    default=8000,
-    type=int,
-    help="Port to bind (default: 8000)"
+    "--port", "-p", default=8000, type=int, help="Port to bind (default: 8000)"
 )
-@click.option(
-    "--reload",
-    is_flag=True,
-    help="Enable auto-reload for development"
-)
+@click.option("--reload", is_flag=True, help="Enable auto-reload for development")
 @click.option(
     "--cors-origins",
     default=None,
-    help="Comma-separated list of allowed CORS origins (default: all)"
+    help="Comma-separated list of allowed CORS origins (default: all)",
 )
 @click.option(
     "--rate-limit",
     default=100,
     type=int,
-    help="Requests per minute rate limit (0 to disable, default: 100)"
+    help="Requests per minute rate limit (0 to disable, default: 100)",
 )
 @click.option(
-    "--workers", "-w",
+    "--workers",
+    "-w",
     default=1,
     type=int,
-    help="Number of worker processes (default: 1)"
+    help="Number of worker processes (default: 1)",
 )
 def serve(
     host: str,
@@ -1354,7 +1345,7 @@ def serve(
     reload: bool,
     cors_origins: Optional[str],
     rate_limit: int,
-    workers: int
+    workers: int,
 ):
     """
     Start the REST API server.
@@ -1378,12 +1369,11 @@ def serve(
         raise click.ClickException(
             "uvicorn is required for the server. "
             "Install with: pip install 'goodai-metrics[server]'"
-        )
+        ) from None
 
     # Parse CORS origins
-    origins = None
     if cors_origins:
-        origins = [o.strip() for o in cors_origins.split(",")]
+        [o.strip() for o in cors_origins.split(",")]
 
     click.echo(f"Starting Good AI Metrics API server at http://{host}:{port}")
     click.echo(f"API documentation: http://{host}:{port}/api/docs")
@@ -1404,6 +1394,7 @@ def serve(
 # CI/CD Commands
 # ============================================================================
 
+
 @main.group()
 def ci():
     """
@@ -1421,39 +1412,37 @@ def ci():
 @ci.command("check")
 @click.argument("files", nargs=-1, type=click.Path(exists=True))
 @click.option(
-    "--industry", "-i",
-    default=None,
-    help="Industry for benchmark comparison"
+    "--industry", "-i", default=None, help="Industry for benchmark comparison"
 )
 @click.option(
-    "--format", "-f", "output_format",
+    "--format",
+    "-f",
+    "output_format",
     type=click.Choice(["summary", "junit", "github", "gitlab", "json"]),
     default="summary",
-    help="Output format (default: summary)"
+    help="Output format (default: summary)",
 )
 @click.option(
-    "--output", "-o",
+    "--output",
+    "-o",
     type=click.Path(),
     default=None,
-    help="Output file (default: stdout)"
+    help="Output file (default: stdout)",
 )
 @click.option(
     "--max-high-priority",
     default=None,
     type=int,
-    help="Maximum allowed HIGH priority items"
+    help="Maximum allowed HIGH priority items",
 )
 @click.option(
-    "--max-gap",
-    default=None,
-    type=float,
-    help="Maximum allowed gap percentage"
+    "--max-gap", default=None, type=float, help="Maximum allowed gap percentage"
 )
 @click.option(
     "--notify-on-failure",
     is_flag=True,
     default=False,
-    help="Send webhook notification on failure"
+    help="Send webhook notification on failure",
 )
 @click.pass_context
 def ci_check(
@@ -1501,7 +1490,7 @@ def ci_check(
         max_gap = config.thresholds.max_gap_percent
 
     # Define the check function
-    def run_health_check(filepath: Path) -> Dict[str, Any]:
+    def run_health_check(filepath: Path) -> dict[str, Any]:
         # Create analyzer with custom benchmarks from config
         analyzer = _create_analyzer(industry, config)
         metrics = analyzer.load_csv(filepath)
@@ -1518,7 +1507,7 @@ def ci_check(
         health_result = check_health_thresholds(
             recommendations,
             max_high_priority=max_high_priority,
-            max_gap_percent=max_gap
+            max_gap_percent=max_gap,
         )
 
         return health_result
@@ -1535,9 +1524,13 @@ def ci_check(
             output_text = generate_github_annotations(results)
         elif output_format == "gitlab":
             import json as json_module
-            output_text = json_module.dumps(generate_gitlab_ci_report(results), indent=2)
+
+            output_text = json_module.dumps(
+                generate_gitlab_ci_report(results), indent=2
+            )
         elif output_format == "json":
             import json as json_module
+
             output_text = json_module.dumps(results, indent=2)
         else:  # summary
             output_text = format_summary_table(results)
@@ -1557,11 +1550,11 @@ def ci_check(
         sys.exit(exit_code)
 
     except CICDError as e:
-        raise click.ClickException(f"CI/CD error: {e}")
+        raise click.ClickException(f"CI/CD error: {e}") from e
     except BenchmarkError as e:
-        raise click.ClickException(f"Benchmark error: {e}")
+        raise click.ClickException(f"Benchmark error: {e}") from e
     except AnalysisError as e:
-        raise click.ClickException(f"Analysis error: {e}")
+        raise click.ClickException(f"Analysis error: {e}") from e
 
 
 def _send_failure_notification(
@@ -1574,7 +1567,7 @@ def _send_failure_notification(
 
     # Check for configured webhook
     webhook_url = None
-    if hasattr(config, 'notifications') and config.notifications:
+    if hasattr(config, "notifications") and config.notifications:
         webhook_url = config.notifications.webhook_url
 
     if not webhook_url:
@@ -1582,9 +1575,15 @@ def _send_failure_notification(
         return
 
     try:
-        from .notifications import send_webhook_notification, is_slack_webhook, send_slack_notification
+        from .notifications import (
+            is_slack_webhook,
+            send_slack_notification,
+            send_webhook_notification,
+        )
 
-        failed_files = [r.get("file", "unknown") for r in results if not r.get("passed", False)]
+        failed_files = [
+            r.get("file", "unknown") for r in results if not r.get("passed", False)
+        ]
         total = len(results)
         failed_count = len(failed_files)
 

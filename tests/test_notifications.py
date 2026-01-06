@@ -1,22 +1,21 @@
 """Tests for webhook notifications."""
 
-import json
-from unittest.mock import patch, MagicMock
 import urllib.error
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from goodai_metrics.notifications import (
-    send_webhook_notification,
-    send_slack_notification,
-    notify_analysis_complete,
-    notify_threshold_breach,
-    notify_regression_detected,
-    is_slack_webhook,
     NotificationError,
-    _validate_webhook_url,
     _sanitize_text,
     _send_http_request,
+    _validate_webhook_url,
+    is_slack_webhook,
+    notify_analysis_complete,
+    notify_regression_detected,
+    notify_threshold_breach,
+    send_slack_notification,
+    send_webhook_notification,
 )
 
 
@@ -107,7 +106,7 @@ class TestSanitizeText:
 class TestSendHttpRequest:
     """Tests for HTTP request sending."""
 
-    @patch('urllib.request.urlopen')
+    @patch("urllib.request.urlopen")
     def test_successful_request(self, mock_urlopen):
         """Successful request returns response."""
         mock_response = MagicMock()
@@ -117,30 +116,20 @@ class TestSendHttpRequest:
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_response
 
-        result = _send_http_request(
-            "https://example.com/webhook",
-            {"message": "test"}
-        )
+        result = _send_http_request("https://example.com/webhook", {"message": "test"})
 
         assert result["status_code"] == 200
         assert result["success"] is True
 
-    @patch('urllib.request.urlopen')
+    @patch("urllib.request.urlopen")
     def test_http_error_returned(self, mock_urlopen):
         """HTTP error returns error info."""
         mock_error = urllib.error.HTTPError(
-            "https://example.com",
-            400,
-            "Bad Request",
-            {},
-            None
+            "https://example.com", 400, "Bad Request", {}, None
         )
         mock_urlopen.side_effect = mock_error
 
-        result = _send_http_request(
-            "https://example.com/webhook",
-            {"message": "test"}
-        )
+        result = _send_http_request("https://example.com/webhook", {"message": "test"})
 
         assert result["status_code"] == 400
         assert result["success"] is False
@@ -150,16 +139,13 @@ class TestSendHttpRequest:
         large_payload = {"data": "x" * 200000}
 
         with pytest.raises(NotificationError, match="Payload too large"):
-            _send_http_request(
-                "https://example.com/webhook",
-                large_payload
-            )
+            _send_http_request("https://example.com/webhook", large_payload)
 
 
 class TestSendWebhookNotification:
     """Tests for generic webhook notifications."""
 
-    @patch('goodai_metrics.notifications._send_http_request')
+    @patch("goodai_metrics.notifications._send_http_request")
     def test_sends_correct_payload(self, mock_send):
         """Sends correct payload structure."""
         mock_send.return_value = {"status_code": 200, "success": True}
@@ -168,7 +154,7 @@ class TestSendWebhookNotification:
             webhook_url="https://example.com/webhook",
             event_type="test_event",
             data={"key": "value"},
-            project="test-project"
+            project="test-project",
         )
 
         call_args = mock_send.call_args
@@ -180,7 +166,7 @@ class TestSendWebhookNotification:
         assert payload["project"] == "test-project"
         assert "timestamp" in payload
 
-    @patch('goodai_metrics.notifications._send_http_request')
+    @patch("goodai_metrics.notifications._send_http_request")
     def test_without_project(self, mock_send):
         """Works without project name."""
         mock_send.return_value = {"status_code": 200, "success": True}
@@ -188,7 +174,7 @@ class TestSendWebhookNotification:
         result = send_webhook_notification(
             webhook_url="https://example.com/webhook",
             event_type="test_event",
-            data={"key": "value"}
+            data={"key": "value"},
         )
 
         assert result["success"] is True
@@ -197,7 +183,7 @@ class TestSendWebhookNotification:
 class TestSendSlackNotification:
     """Tests for Slack webhook notifications."""
 
-    @patch('goodai_metrics.notifications._send_http_request')
+    @patch("goodai_metrics.notifications._send_http_request")
     def test_sends_slack_format(self, mock_send):
         """Sends Slack-formatted payload."""
         mock_send.return_value = {"status_code": 200, "success": True}
@@ -207,7 +193,7 @@ class TestSendSlackNotification:
             title="Test Title",
             message="Test message",
             color="good",
-            project="test-project"
+            project="test-project",
         )
 
         call_args = mock_send.call_args
@@ -220,7 +206,7 @@ class TestSendSlackNotification:
         assert attachment["color"] == "good"
         assert "Project: test-project" in attachment["footer"]
 
-    @patch('goodai_metrics.notifications._send_http_request')
+    @patch("goodai_metrics.notifications._send_http_request")
     def test_with_fields(self, mock_send):
         """Includes fields in payload."""
         mock_send.return_value = {"status_code": 200, "success": True}
@@ -234,7 +220,7 @@ class TestSendSlackNotification:
             webhook_url="https://hooks.slack.com/services/xxx",
             title="Test",
             message="Test",
-            fields=fields
+            fields=fields,
         )
 
         call_args = mock_send.call_args
@@ -247,7 +233,7 @@ class TestSendSlackNotification:
 class TestNotifyAnalysisComplete:
     """Tests for analysis complete notifications."""
 
-    @patch('goodai_metrics.notifications.send_webhook_notification')
+    @patch("goodai_metrics.notifications.send_webhook_notification")
     def test_generic_webhook(self, mock_send):
         """Sends generic webhook notification."""
         mock_send.return_value = {"status_code": 200, "success": True}
@@ -266,7 +252,7 @@ class TestNotifyAnalysisComplete:
             analysis_results=analysis_results,
             recommendations=recommendations,
             overall_health="NEEDS_ATTENTION",
-            is_slack=False
+            is_slack=False,
         )
 
         mock_send.assert_called_once()
@@ -274,7 +260,7 @@ class TestNotifyAnalysisComplete:
         assert call_args[1]["event_type"] == "analysis_complete"
         assert call_args[1]["data"]["high_priority_count"] == 1
 
-    @patch('goodai_metrics.notifications.send_slack_notification')
+    @patch("goodai_metrics.notifications.send_slack_notification")
     def test_slack_webhook(self, mock_send):
         """Sends Slack notification."""
         mock_send.return_value = {"status_code": 200, "success": True}
@@ -290,7 +276,7 @@ class TestNotifyAnalysisComplete:
             analysis_results=analysis_results,
             recommendations=recommendations,
             overall_health="CRITICAL",
-            is_slack=True
+            is_slack=True,
         )
 
         mock_send.assert_called_once()
@@ -301,7 +287,7 @@ class TestNotifyAnalysisComplete:
 class TestNotifyThresholdBreach:
     """Tests for threshold breach notifications."""
 
-    @patch('goodai_metrics.notifications.send_webhook_notification')
+    @patch("goodai_metrics.notifications.send_webhook_notification")
     def test_generic_webhook(self, mock_send):
         """Sends breach notification."""
         mock_send.return_value = {"status_code": 200, "success": True}
@@ -312,7 +298,7 @@ class TestNotifyThresholdBreach:
             current_value=0.65,
             threshold_value=0.80,
             breach_type="below_min",
-            is_slack=False
+            is_slack=False,
         )
 
         mock_send.assert_called_once()
@@ -324,7 +310,7 @@ class TestNotifyThresholdBreach:
 class TestNotifyRegressionDetected:
     """Tests for regression notifications."""
 
-    @patch('goodai_metrics.notifications.send_webhook_notification')
+    @patch("goodai_metrics.notifications.send_webhook_notification")
     def test_generic_webhook(self, mock_send):
         """Sends regression notification."""
         mock_send.return_value = {"status_code": 200, "success": True}
@@ -334,14 +320,14 @@ class TestNotifyRegressionDetected:
                 "metric": "accuracy",
                 "previous_value": 0.90,
                 "current_value": 0.80,
-                "change_percent": -11.1
+                "change_percent": -11.1,
             }
         ]
 
         notify_regression_detected(
             webhook_url="https://example.com/webhook",
             regressions=regressions,
-            is_slack=False
+            is_slack=False,
         )
 
         mock_send.assert_called_once()
@@ -372,7 +358,7 @@ class TestIsSlackWebhook:
 class TestSecurityLimits:
     """Tests for security limits."""
 
-    @patch('goodai_metrics.notifications._send_http_request')
+    @patch("goodai_metrics.notifications._send_http_request")
     def test_sanitizes_project_name(self, mock_send):
         """Project name is sanitized."""
         mock_send.return_value = {"status_code": 200, "success": True}
@@ -381,7 +367,7 @@ class TestSecurityLimits:
             webhook_url="https://example.com/webhook",
             event_type="test",
             data={},
-            project="test\x00project\x01name"
+            project="test\x00project\x01name",
         )
 
         call_args = mock_send.call_args
@@ -389,7 +375,7 @@ class TestSecurityLimits:
         assert "\x00" not in payload["project"]
         assert "\x01" not in payload["project"]
 
-    @patch('goodai_metrics.notifications.send_webhook_notification')
+    @patch("goodai_metrics.notifications.send_webhook_notification")
     def test_limits_regression_count(self, mock_send):
         """Limits regression count in payload."""
         mock_send.return_value = {"status_code": 200, "success": True}
@@ -399,14 +385,14 @@ class TestSecurityLimits:
         notify_regression_detected(
             webhook_url="https://example.com/webhook",
             regressions=regressions,
-            is_slack=False
+            is_slack=False,
         )
 
         call_args = mock_send.call_args
         # The data should be limited to 20 regressions
         assert len(call_args[1]["data"]["regressions"]) <= 20
 
-    @patch('goodai_metrics.notifications.send_webhook_notification')
+    @patch("goodai_metrics.notifications.send_webhook_notification")
     def test_sanitizes_metric_name_in_threshold_breach(self, mock_send):
         """Metric name is sanitized in threshold breach."""
         mock_send.return_value = {"status_code": 200, "success": True}
@@ -417,14 +403,14 @@ class TestSecurityLimits:
             current_value=0.65,
             threshold_value=0.80,
             breach_type="below_min",
-            is_slack=False
+            is_slack=False,
         )
 
         call_args = mock_send.call_args
         assert "\x00" not in call_args[1]["data"]["metric_name"]
         assert "\x01" not in call_args[1]["data"]["metric_name"]
 
-    @patch('goodai_metrics.notifications.send_webhook_notification')
+    @patch("goodai_metrics.notifications.send_webhook_notification")
     def test_sanitizes_breach_type(self, mock_send):
         """Breach type is sanitized."""
         mock_send.return_value = {"status_code": 200, "success": True}
@@ -435,13 +421,13 @@ class TestSecurityLimits:
             current_value=0.65,
             threshold_value=0.80,
             breach_type="below\x00min",
-            is_slack=False
+            is_slack=False,
         )
 
         call_args = mock_send.call_args
         assert "\x00" not in call_args[1]["data"]["breach_type"]
 
-    @patch('goodai_metrics.notifications.send_webhook_notification')
+    @patch("goodai_metrics.notifications.send_webhook_notification")
     def test_sanitizes_regression_metric_names(self, mock_send):
         """Regression metric names are sanitized."""
         mock_send.return_value = {"status_code": 200, "success": True}
@@ -451,20 +437,20 @@ class TestSecurityLimits:
                 "metric": "metric\x00name",
                 "previous_value": 0.90,
                 "current_value": 0.80,
-                "change_percent": -11.1
+                "change_percent": -11.1,
             }
         ]
 
         notify_regression_detected(
             webhook_url="https://example.com/webhook",
             regressions=regressions,
-            is_slack=False
+            is_slack=False,
         )
 
         call_args = mock_send.call_args
         assert "\x00" not in call_args[1]["data"]["regressions"][0]["metric"]
 
-    @patch('goodai_metrics.notifications._send_http_request')
+    @patch("goodai_metrics.notifications._send_http_request")
     def test_invalid_slack_color_defaults_to_gray(self, mock_send):
         """Invalid Slack color defaults to gray."""
         mock_send.return_value = {"status_code": 200, "success": True}
@@ -473,14 +459,14 @@ class TestSecurityLimits:
             webhook_url="https://hooks.slack.com/services/xxx",
             title="Test",
             message="Test",
-            color="invalid_color"
+            color="invalid_color",
         )
 
         call_args = mock_send.call_args
         payload = call_args[0][1]
         assert payload["attachments"][0]["color"] == "#808080"
 
-    @patch('goodai_metrics.notifications._send_http_request')
+    @patch("goodai_metrics.notifications._send_http_request")
     def test_valid_hex_color_accepted(self, mock_send):
         """Valid hex color is accepted."""
         mock_send.return_value = {"status_code": 200, "success": True}
@@ -489,7 +475,7 @@ class TestSecurityLimits:
             webhook_url="https://hooks.slack.com/services/xxx",
             title="Test",
             message="Test",
-            color="#FF5733"
+            color="#FF5733",
         )
 
         call_args = mock_send.call_args

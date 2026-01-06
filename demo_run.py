@@ -15,9 +15,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from goodai_metrics.analyzer import MetricsAnalyzer
-from goodai_metrics.benchmarks import load_benchmarks, get_benchmark_for_industry
-from goodai_metrics.recommendations import generate_all_recommendations, determine_overall_health
+from goodai_metrics.benchmarks import get_benchmark_for_industry, load_benchmarks
 from goodai_metrics.formatters import format_report_json, format_report_text
+from goodai_metrics.recommendations import (
+    determine_overall_health,
+    generate_all_recommendations,
+)
 
 
 def generate_sample_csv(output_path: Path) -> None:
@@ -77,21 +80,27 @@ def main():
 
         # Generate recommendations
         print("Generating recommendations...")
-        recommendations = generate_all_recommendations(analysis_results, industry_benchmarks)
+        recommendations = generate_all_recommendations(
+            analysis_results, industry_benchmarks
+        )
         overall_health = determine_overall_health(recommendations)
         print()
 
         # Output JSON report
         print("JSON REPORT:")
         print("=" * 60)
-        json_output = format_report_json(analysis_results, recommendations, overall_health)
+        json_output = format_report_json(
+            analysis_results, recommendations, overall_health
+        )
         print(json_output)
         print()
 
         # Output text report
         print()
         print("TEXT REPORT:")
-        text_output = format_report_text(analysis_results, recommendations, overall_health)
+        text_output = format_report_text(
+            analysis_results, recommendations, overall_health
+        )
         print(text_output)
 
         print()

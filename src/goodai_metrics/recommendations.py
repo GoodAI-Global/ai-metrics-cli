@@ -5,22 +5,17 @@ Generates actionable recommendations based on metric gaps.
 Implements the 'Evidence over opinions' principle with data-driven priorities.
 """
 
-from typing import Dict, Any, List, Optional
-
+from typing import Any, Optional
 
 # Metric categorization for effort estimation
-INFRASTRUCTURE_METRICS = {
-    "latency_ms",
-    "cost_per_inference",
-    "processing_time_hours"
-}
+INFRASTRUCTURE_METRICS = {"latency_ms", "cost_per_inference", "processing_time_hours"}
 
 PROCESS_METRICS = {
     "accuracy",
     "error_rate",
     "adoption_percent",
     "straight_through_rate",
-    "prediction_accuracy"
+    "prediction_accuracy",
 }
 
 # Specific recommendations based on metric and gap
@@ -28,57 +23,59 @@ RECOMMENDATION_TEMPLATES = {
     "latency_ms": {
         "high": "Review batch size and model quantization options. Consider edge deployment for latency-critical paths.",
         "medium": "Profile inference pipeline to identify bottlenecks. Evaluate caching strategies for repeated inputs.",
-        "low": "Monitor latency trends. Minor optimizations available through request batching."
+        "low": "Monitor latency trends. Minor optimizations available through request batching.",
     },
     "accuracy": {
         "high": "Inspect failure cases for hard negatives and edge cases. Consider ensemble methods or model retraining.",
         "medium": "Analyze confusion matrix for systematic errors. Augment training data for underperforming classes.",
-        "low": "Current accuracy acceptable. Focus on maintaining data quality for continued performance."
+        "low": "Current accuracy acceptable. Focus on maintaining data quality for continued performance.",
     },
     "error_rate": {
         "high": "Implement human-in-the-loop for high-uncertainty predictions. Add confidence thresholds for automated decisions.",
         "medium": "Review error patterns for common failure modes. Consider adding validation rules for edge cases.",
-        "low": "Error rate within acceptable range. Continue monitoring for regression."
+        "low": "Error rate within acceptable range. Continue monitoring for regression.",
     },
     "adoption_percent": {
         "high": "Conduct user research to identify adoption barriers. Improve onboarding and training materials.",
         "medium": "Address common user pain points. Consider UX improvements and workflow integration.",
-        "low": "Adoption on track. Focus on power user features and advanced capabilities."
+        "low": "Adoption on track. Focus on power user features and advanced capabilities.",
     },
     "cost_per_inference": {
         "high": "Evaluate model distillation or quantization. Consider spot instances or reserved capacity.",
         "medium": "Implement request batching. Review caching for frequently requested predictions.",
-        "low": "Cost efficiency good. Monitor for usage spikes."
+        "low": "Cost efficiency good. Monitor for usage spikes.",
     },
     "processing_time_hours": {
         "high": "Implement parallel processing. Review for blocking operations and batch optimization.",
         "medium": "Streamline workflow steps. Consider async processing for non-critical paths.",
-        "low": "Processing time acceptable. Minor gains available through queue optimization."
+        "low": "Processing time acceptable. Minor gains available through queue optimization.",
     },
     "straight_through_rate": {
         "high": "Review exception handling rules for over-rejection. Train model on rejected cases.",
         "medium": "Analyze manual intervention patterns. Automate common exception resolutions.",
-        "low": "STP rate on track. Focus on maintaining quality while increasing automation."
+        "low": "STP rate on track. Focus on maintaining quality while increasing automation.",
     },
     "prediction_accuracy": {
         "high": "Collect more labeled data for problem areas. Consider feature engineering improvements.",
         "medium": "Retrain with recent data. Review feature drift and data quality.",
-        "low": "Accuracy acceptable. Monitor for model drift over time."
+        "low": "Accuracy acceptable. Monitor for model drift over time.",
     },
     "early_warning_hours": {
         "high": "Improve sensor data quality and sampling frequency. Review detection thresholds.",
         "medium": "Add leading indicators to detection model. Consider ensemble approaches.",
-        "low": "Warning time adequate. Focus on response process optimization."
+        "low": "Warning time adequate. Focus on response process optimization.",
     },
     "feed_efficiency_improvement": {
         "high": "Review feeding algorithm calibration. Collect more environmental data for model inputs.",
         "medium": "Fine-tune prediction parameters. A/B test feeding strategies.",
-        "low": "Efficiency gains on track. Monitor for seasonal variations."
-    }
+        "low": "Efficiency gains on track. Monitor for seasonal variations.",
+    },
 }
 
 
-def calculate_gap(value: float, benchmark_p50: float, higher_is_better: bool = True) -> float:
+def calculate_gap(
+    value: float, benchmark_p50: float, higher_is_better: bool = True
+) -> float:
     """
     Calculate the gap between current value and benchmark.
 
@@ -109,7 +106,7 @@ def is_higher_better(metric: str) -> bool:
         "latency_ms",
         "error_rate",
         "cost_per_inference",
-        "processing_time_hours"
+        "processing_time_hours",
     }
     return metric not in lower_is_better
 
@@ -166,7 +163,7 @@ def get_recommendation_text(metric: str, priority: str) -> str:
     if metric in RECOMMENDATION_TEMPLATES:
         return RECOMMENDATION_TEMPLATES[metric].get(
             priority_key,
-            f"Review {metric} performance and identify improvement opportunities."
+            f"Review {metric} performance and identify improvement opportunities.",
         )
     else:
         # Generic recommendation for unknown metrics
@@ -178,7 +175,9 @@ def get_recommendation_text(metric: str, priority: str) -> str:
             return f"{metric} within acceptable range. Continue monitoring."
 
 
-def generate_recommendation(metric: str, value: float, benchmark: Dict) -> Dict[str, Any]:
+def generate_recommendation(
+    metric: str, value: float, benchmark: dict
+) -> dict[str, Any]:
     """
     Generate a recommendation for a single metric.
 
@@ -205,15 +204,15 @@ def generate_recommendation(metric: str, value: float, benchmark: Dict) -> Dict[
         "gap_percent": round(gap * 100, 1),
         "priority": priority,
         "effort": effort,
-        "recommendation": recommendation
+        "recommendation": recommendation,
     }
 
 
 def generate_all_recommendations(
-    analysis_results: Dict[str, Any],
-    industry_benchmarks: Dict[str, Dict],
-    custom_targets: Optional[Dict[str, Any]] = None,
-) -> List[Dict[str, Any]]:
+    analysis_results: dict[str, Any],
+    industry_benchmarks: dict[str, dict],
+    custom_targets: Optional[dict[str, Any]] = None,
+) -> list[dict[str, Any]]:
     """
     Generate recommendations for all analyzed metrics.
 
@@ -237,13 +236,15 @@ def generate_all_recommendations(
             target = custom_targets[metric_name]
             # Convert CustomTarget to benchmark-like dict
             # Use target as p50, with reasonable spread for other percentiles
-            target_value = target.target if hasattr(target, 'target') else target.get('target')
+            target_value = (
+                target.target if hasattr(target, "target") else target.get("target")
+            )
             if target_value is not None:
                 benchmark = {
                     "p25": target_value * 0.85,  # 15% below target
-                    "p50": target_value,          # Target is the goal
-                    "p75": target_value * 1.10,   # 10% above target
-                    "p90": target_value * 1.20,   # 20% above target
+                    "p50": target_value,  # Target is the goal
+                    "p75": target_value * 1.10,  # 10% above target
+                    "p90": target_value * 1.20,  # 20% above target
                 }
                 rec = generate_recommendation(metric_name, current_value, benchmark)
                 rec["has_custom_target"] = True
@@ -253,21 +254,19 @@ def generate_all_recommendations(
         # Fall back to industry benchmark
         if metric_name in industry_benchmarks:
             benchmark = industry_benchmarks[metric_name]
-            rec = generate_recommendation(
-                metric_name,
-                current_value,
-                benchmark
-            )
+            rec = generate_recommendation(metric_name, current_value, benchmark)
             recommendations.append(rec)
 
     # Sort by priority (HIGH first, then MEDIUM, then LOW)
     priority_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
-    recommendations.sort(key=lambda x: (priority_order.get(x["priority"], 3), -x["gap_percent"]))
+    recommendations.sort(
+        key=lambda x: (priority_order.get(x["priority"], 3), -x["gap_percent"])
+    )
 
     return recommendations
 
 
-def determine_overall_health(recommendations: List[Dict]) -> str:
+def determine_overall_health(recommendations: list[dict]) -> str:
     """
     Determine overall health status based on recommendations.
 
@@ -292,10 +291,10 @@ def determine_overall_health(recommendations: List[Dict]) -> str:
 
 
 def check_health_thresholds(
-    recommendations: List[Dict],
+    recommendations: list[dict],
     max_high_priority: int = 0,
-    max_gap_percent: float = 30.0
-) -> Dict[str, Any]:
+    max_gap_percent: float = 30.0,
+) -> dict[str, Any]:
     """
     Check if metrics pass health thresholds for CI/CD.
 
@@ -311,23 +310,29 @@ def check_health_thresholds(
 
     high_priority_items = [r for r in recommendations if r["priority"] == "HIGH"]
     if len(high_priority_items) > max_high_priority:
-        failures.append({
-            "check": "high_priority_count",
-            "expected": f"<= {max_high_priority}",
-            "actual": len(high_priority_items),
-            "metrics": [r["metric"] for r in high_priority_items]
-        })
+        failures.append(
+            {
+                "check": "high_priority_count",
+                "expected": f"<= {max_high_priority}",
+                "actual": len(high_priority_items),
+                "metrics": [r["metric"] for r in high_priority_items],
+            }
+        )
 
     large_gap_items = [r for r in recommendations if r["gap_percent"] > max_gap_percent]
     if large_gap_items:
-        failures.append({
-            "check": "gap_percent",
-            "expected": f"<= {max_gap_percent}%",
-            "actual": [f"{r['metric']}: {r['gap_percent']}%" for r in large_gap_items]
-        })
+        failures.append(
+            {
+                "check": "gap_percent",
+                "expected": f"<= {max_gap_percent}%",
+                "actual": [
+                    f"{r['metric']}: {r['gap_percent']}%" for r in large_gap_items
+                ],
+            }
+        )
 
     return {
         "passed": len(failures) == 0,
         "failures": failures,
-        "metrics_checked": len(recommendations)
+        "metrics_checked": len(recommendations),
     }

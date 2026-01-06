@@ -9,11 +9,12 @@ import json
 import math
 import re
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Any, Optional
 
 
 class BenchmarkError(Exception):
     """Raised when benchmark data cannot be loaded or is invalid."""
+
     pass
 
 
@@ -26,7 +27,7 @@ MAX_INDUSTRIES = 500
 MAX_METRICS_PER_INDUSTRY = 200
 
 # Valid name pattern for industries and metrics
-VALID_NAME_PATTERN = re.compile(r'^[\w][\w_-]{0,99}$')
+VALID_NAME_PATTERN = re.compile(r"^[\w][\w_-]{0,99}$")
 
 
 def get_benchmarks_path() -> Path:
@@ -51,7 +52,7 @@ def get_benchmarks_path() -> Path:
     )
 
 
-def load_benchmarks(filepath: Optional[Path] = None) -> Dict[str, Any]:
+def load_benchmarks(filepath: Optional[Path] = None) -> dict[str, Any]:
     """
     Load industry benchmarks from JSON file.
 
@@ -68,12 +69,12 @@ def load_benchmarks(filepath: Optional[Path] = None) -> Dict[str, Any]:
         filepath = get_benchmarks_path()
 
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             data = json.load(f)
     except FileNotFoundError:
-        raise BenchmarkError(f"Benchmark file not found: {filepath}")
+        raise BenchmarkError(f"Benchmark file not found: {filepath}") from None
     except json.JSONDecodeError as e:
-        raise BenchmarkError(f"Invalid JSON in benchmark file: {e}")
+        raise BenchmarkError(f"Invalid JSON in benchmark file: {e}") from e
 
     # Validate structure
     if not isinstance(data, dict):
@@ -97,7 +98,9 @@ def load_benchmarks(filepath: Optional[Path] = None) -> Dict[str, Any]:
     return data
 
 
-def get_benchmark_for_industry(industry: str, benchmarks: Optional[Dict] = None) -> Dict[str, Any]:
+def get_benchmark_for_industry(
+    industry: str, benchmarks: Optional[dict] = None
+) -> dict[str, Any]:
     """
     Get benchmark data for a specific industry.
 
@@ -116,14 +119,12 @@ def get_benchmark_for_industry(industry: str, benchmarks: Optional[Dict] = None)
 
     if industry not in benchmarks:
         available = ", ".join(sorted(benchmarks.keys()))
-        raise BenchmarkError(
-            f"Unknown industry: '{industry}'. Available: {available}"
-        )
+        raise BenchmarkError(f"Unknown industry: '{industry}'. Available: {available}")
 
     return benchmarks[industry]
 
 
-def get_available_industries(benchmarks: Optional[Dict] = None) -> list:
+def get_available_industries(benchmarks: Optional[dict] = None) -> list:
     """
     Get list of available industries.
 
@@ -139,7 +140,9 @@ def get_available_industries(benchmarks: Optional[Dict] = None) -> list:
     return sorted(benchmarks.keys())
 
 
-def get_percentile_rank(value: float, benchmark: Dict[str, float], higher_is_better: bool = True) -> str:
+def get_percentile_rank(
+    value: float, benchmark: dict[str, float], higher_is_better: bool = True
+) -> str:
     """
     Determine which percentile bracket a value falls into.
 
@@ -178,7 +181,7 @@ def get_percentile_rank(value: float, benchmark: Dict[str, float], higher_is_bet
 
 
 def validate_benchmark_data(
-    data: Dict[str, Any],
+    data: dict[str, Any],
     source: str = "unknown",
     validate_names: bool = True,
 ) -> None:
@@ -252,10 +255,10 @@ def validate_benchmark_data(
                 except (ValueError, TypeError):
                     raise BenchmarkError(
                         f"{source}: {industry}.{metric_name}.{key} must be a number"
-                    )
+                    ) from None
 
 
-def load_benchmark_file(filepath: Path) -> Dict[str, Any]:
+def load_benchmark_file(filepath: Path) -> dict[str, Any]:
     """
     Load benchmarks from a single JSON or YAML file.
 
@@ -286,31 +289,32 @@ def load_benchmark_file(filepath: Path) -> Dict[str, Any]:
                 f"(max {MAX_BENCHMARK_FILE_SIZE // (1024 * 1024)} MB)"
             )
     except OSError as e:
-        raise BenchmarkError(f"Cannot access benchmark file {filepath}: {e}")
+        raise BenchmarkError(f"Cannot access benchmark file {filepath}: {e}") from e
 
     suffix = filepath.suffix.lower()
 
     try:
         content = filepath.read_text(encoding="utf-8")
-    except (IOError, OSError, UnicodeDecodeError) as e:
-        raise BenchmarkError(f"Failed to read benchmark file {filepath}: {e}")
+    except (OSError, UnicodeDecodeError) as e:
+        raise BenchmarkError(f"Failed to read benchmark file {filepath}: {e}") from e
 
     if suffix == ".json":
         try:
             data = json.loads(content)
         except json.JSONDecodeError as e:
-            raise BenchmarkError(f"Invalid JSON in {filepath}: {e}")
+            raise BenchmarkError(f"Invalid JSON in {filepath}: {e}") from e
 
     elif suffix in (".yaml", ".yml"):
         try:
             import yaml
+
             data = yaml.safe_load(content)
         except ImportError:
             raise BenchmarkError(
                 f"YAML file {filepath} requires PyYAML. Install with: pip install pyyaml"
-            )
+            ) from None
         except Exception as e:
-            raise BenchmarkError(f"Invalid YAML in {filepath}: {e}")
+            raise BenchmarkError(f"Invalid YAML in {filepath}: {e}") from e
     else:
         raise BenchmarkError(
             f"Unsupported benchmark file format: {suffix}. Use .json, .yaml, or .yml"
@@ -323,7 +327,7 @@ def load_benchmark_file(filepath: Path) -> Dict[str, Any]:
     return data
 
 
-def merge_benchmarks(*benchmark_dicts: Dict[str, Any]) -> Dict[str, Any]:
+def merge_benchmarks(*benchmark_dicts: dict[str, Any]) -> dict[str, Any]:
     """
     Merge multiple benchmark dictionaries.
 
@@ -335,7 +339,7 @@ def merge_benchmarks(*benchmark_dicts: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Merged benchmark dictionary.
     """
-    result: Dict[str, Dict[str, Any]] = {}
+    result: dict[str, dict[str, Any]] = {}
 
     for benchmarks in benchmark_dicts:
         if not benchmarks:
@@ -353,9 +357,9 @@ def merge_benchmarks(*benchmark_dicts: Dict[str, Any]) -> Dict[str, Any]:
 
 def load_benchmarks_with_custom(
     base_filepath: Optional[Path] = None,
-    additional_files: Optional[List[Path]] = None,
-    custom_benchmarks: Optional[Dict[str, Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
+    additional_files: Optional[list[Path]] = None,
+    custom_benchmarks: Optional[dict[str, dict[str, Any]]] = None,
+) -> dict[str, Any]:
     """
     Load benchmarks with optional custom overrides.
 
@@ -395,8 +399,8 @@ def load_benchmarks_with_custom(
 
 def create_custom_industry(
     industry_name: str,
-    metrics: Dict[str, Dict[str, float]],
-) -> Dict[str, Dict[str, Any]]:
+    metrics: dict[str, dict[str, float]],
+) -> dict[str, dict[str, Any]]:
     """
     Create a custom industry benchmark definition.
 

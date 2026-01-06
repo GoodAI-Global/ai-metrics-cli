@@ -1,16 +1,15 @@
 """Tests for PDF report generation."""
 
-import tempfile
 from pathlib import Path
 
 import pytest
 
 from goodai_metrics.reports import (
-    generate_pdf_report,
-    generate_comparison_pdf_report,
     ReportError,
-    _validate_output_path,
     _sanitize_text,
+    _validate_output_path,
+    generate_comparison_pdf_report,
+    generate_pdf_report,
 )
 
 
@@ -134,7 +133,9 @@ class TestGeneratePdfReport:
             },
         ]
 
-    def test_generates_pdf_file(self, tmp_path, sample_analysis, sample_recommendations):
+    def test_generates_pdf_file(
+        self, tmp_path, sample_analysis, sample_recommendations
+    ):
         """Generates a valid PDF file."""
         output = tmp_path / "test_report.pdf"
 
@@ -224,7 +225,9 @@ class TestGeneratePdfReport:
 
         assert result.exists()
 
-    def test_path_traversal_blocked(self, tmp_path, sample_analysis, sample_recommendations):
+    def test_path_traversal_blocked(
+        self, tmp_path, sample_analysis, sample_recommendations
+    ):
         """Path traversal in output is blocked."""
         output = tmp_path / ".." / "escape.pdf"
 
@@ -236,7 +239,9 @@ class TestGeneratePdfReport:
                 output_path=output,
             )
 
-    def test_non_pdf_extension_blocked(self, tmp_path, sample_analysis, sample_recommendations):
+    def test_non_pdf_extension_blocked(
+        self, tmp_path, sample_analysis, sample_recommendations
+    ):
         """Non-PDF extension is blocked."""
         output = tmp_path / "report.txt"
 
@@ -359,7 +364,12 @@ class TestReportSecurity:
 
         # Should not raise, control chars should be stripped
         result = generate_pdf_report(
-            analysis_results={"industry": "general", "metrics_analyzed": 0, "metrics_with_benchmarks": 0, "analysis": []},
+            analysis_results={
+                "industry": "general",
+                "metrics_analyzed": 0,
+                "metrics_with_benchmarks": 0,
+                "analysis": [],
+            },
             recommendations=[],
             overall_health="HEALTHY",
             output_path=output,
@@ -375,7 +385,12 @@ class TestReportSecurity:
         long_desc = "x" * 5000
 
         result = generate_pdf_report(
-            analysis_results={"industry": "general", "metrics_analyzed": 0, "metrics_with_benchmarks": 0, "analysis": []},
+            analysis_results={
+                "industry": "general",
+                "metrics_analyzed": 0,
+                "metrics_with_benchmarks": 0,
+                "analysis": [],
+            },
             recommendations=[],
             overall_health="HEALTHY",
             output_path=output,
@@ -403,7 +418,12 @@ class TestReportSecurity:
 
         with pytest.raises(ReportError, match="Too many recommendations"):
             generate_pdf_report(
-                analysis_results={"industry": "general", "metrics_analyzed": 0, "metrics_with_benchmarks": 0, "analysis": []},
+                analysis_results={
+                    "industry": "general",
+                    "metrics_analyzed": 0,
+                    "metrics_with_benchmarks": 0,
+                    "analysis": [],
+                },
                 recommendations=many_recs,
                 overall_health="HEALTHY",
                 output_path=output,

@@ -1,26 +1,23 @@
 """Tests for CI/CD integration module."""
 
-import json
 import xml.etree.ElementTree as ET
-from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from goodai_metrics.cicd import (
-    generate_junit_xml,
-    generate_github_annotations,
-    generate_gitlab_ci_report,
-    get_exit_code,
-    format_summary_table,
-    batch_check_files,
-    CICDError,
+    EXIT_ANALYSIS_ERROR,
     EXIT_SUCCESS,
     EXIT_THRESHOLD_FAILURE,
-    EXIT_ANALYSIS_ERROR,
+    CICDError,
     _sanitize_text,
-    _sanitize_xml_text,
     _validate_file_path,
+    batch_check_files,
+    format_summary_table,
+    generate_github_annotations,
+    generate_gitlab_ci_report,
+    generate_junit_xml,
+    get_exit_code,
 )
 
 
@@ -485,7 +482,4 @@ class TestSecurity:
     def test_path_traversal_in_batch(self):
         """Path traversal is blocked in batch check."""
         with pytest.raises(CICDError, match="cannot contain"):
-            batch_check_files(
-                [Path("../../../etc/passwd")],
-                lambda x: {"passed": True}
-            )
+            batch_check_files([Path("../../../etc/passwd")], lambda x: {"passed": True})
